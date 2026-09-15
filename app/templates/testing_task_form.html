@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="ui-form-page">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+        <h1 class="page-title">{{ title }}</h1>
+        <a class="ui-btn-secondary" href="{{ url_for('main.business', stage='testing') }}">← 返回测试控制</a>
+    </div>
+
+    <form class="filter-card" method="POST" novalidate>
+        {{ form.hidden_tag() }}
+
+        <h3 class="ui-section-title">任务信息</h3>
+        <div class="ui-form-grid">
+            <div class="form-field">
+                <label class="ui-required">{{ form.name.label.text }}</label>
+                {{ form.name(class="form-control", placeholder="安全测试任务名称") }}
+                {% for error in form.name.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.test_type.label.text }}</label>
+                {{ form.test_type(class="form-select") }}
+                {% for error in form.test_type.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="form-field form-field--wide">
+                <label>{{ form.project_id.label.text }}</label>
+                {{ form.project_id(class="form-select") }}
+                {% for error in form.project_id.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="form-field form-field--wide">
+                <label class="ui-required">{{ form.assets.label.text }}</label>
+                {{ form.assets(class="form-control", rows=5, placeholder="系统前后端地址、测试账号、代码仓、容器镜像、数据库等提测资产") }}
+                {% for error in form.assets.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+                <div class="ui-hint">一行一个资产，提交后可在任务详情中查看。</div>
+            </div>
+        </div>
+
+        <h3 class="ui-section-title" style="margin-top:24px;">排期</h3>
+        <div class="ui-form-grid" style="grid-template-columns:repeat(3,minmax(160px,1fr));">
+            <div class="form-field">
+                <label>{{ form.expected_release_date.label.text }}</label>
+                {{ form.expected_release_date(class="form-control") }}
+            </div>
+            <div class="form-field">
+                <label>{{ form.manual_test_start.label.text }}</label>
+                {{ form.manual_test_start(class="form-control") }}
+            </div>
+            <div class="form-field">
+                <label>{{ form.manual_test_end.label.text }}</label>
+                {{ form.manual_test_end(class="form-control") }}
+            </div>
+        </div>
+
+        <div class="ui-hint" style="margin-top:12px;">提交后进入待分配排期，创建人自动记录。</div>
+
+        <div class="ui-form-actions">
+            <a class="ui-btn-secondary" href="{{ url_for('main.business', stage='testing') }}">取消</a>
+            {{ form.submit(class="ui-btn-primary") }}
+        </div>
+    </form>
+</div>
+{% endblock %}

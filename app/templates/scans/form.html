@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+{% set editing = scan %}
+
+<div class="ui-form-page">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+        <h1 class="page-title">{{ '编辑扫描记录' if editing else '录入扫描记录' }}</h1>
+        <a class="ui-btn-secondary" href="{{ url_for('scans.detail', scan_id=scan.id) if editing else url_for('scans.index') }}">← 返回</a>
+    </div>
+
+    <form class="filter-card" method="POST" novalidate>
+        {{ form.hidden_tag() }}
+
+        <h3 class="ui-section-title">扫描信息</h3>
+        <div class="ui-form-grid">
+            <div class="form-field">
+                <label class="ui-required">{{ form.scan_type.label.text }}</label>
+                {{ form.scan_type(class="form-select") }}
+            </div>
+            <div class="form-field">
+                <label class="ui-required">{{ form.status.label.text }}</label>
+                {{ form.status(class="form-select") }}
+            </div>
+            <div class="form-field">
+                <label>{{ form.project_id.label.text }}</label>
+                {{ form.project_id(class="form-select") }}
+                <div class="ui-hint">只有关联了项目的扫描，才能把发现转为漏洞。</div>
+            </div>
+            <div class="form-field">
+                <label>{{ form.tool.label.text }}</label>
+                {{ form.tool(class="form-control", list="toolSuggestions", placeholder="如 SonarQube / Trivy / Snyk") }}
+                <datalist id="toolSuggestions">
+                    {% for group in tool_suggestions.values() %}
+                    {% for name in group %}<option value="{{ name }}"></option>{% endfor %}
+                    {% endfor %}
+                </datalist>
+            </div>
+            <div class="form-field form-field--wide">
+                <label>{{ form.target.label.text }}</label>
+                {{ form.target(class="form-control", placeholder="代码仓地址 / 依赖清单 / 镜像名:tag") }}
+                <div class="ui-hint">源代码扫描填代码仓地址；组件扫描填依赖清单或包名；容器扫描填镜像名:标签。</div>
+            </div>
+            <div class="form-field">
+                <label>{{ form.started_at.label.text }}</label>
+                {{ form.started_at(class="form-control") }}
+            </div>
+            <div class="form-field">
+                <label>{{ form.finished_at.label.text }}</label>
+                {{ form.finished_at(class="form-control") }}
+            </div>
+        </div>
+
+        {% if not editing %}
+        <h3 class="ui-section-title" style="margin-top:24px;">发现明细</h3>
+        <div class="ui-form-grid">
+            <div class="form-field form-field--wide">
+                <label>{{ form.findings_text.label.text }}</label>
+                {{ form.findings_text(class="form-control", rows=10,
+                     placeholder="每行一条，用 | 分隔：\n严重|CWE-89|用户中心接口 SQL 注入|src/user/dao.py:88\n高危|CWE-79|订单备注未转义|templates/order.html:42\n中危|composer:jackson-databind:2.9.8|存在反序列化风险|pom.xml") }}
+                <div class="ui-hint">
+                    级别支持中英文（严重/Critical、高危/High、中危/Medium、低危/Low）。<br>
+                    格式：<code>等级 | 规则编号 | 标题 | 位置</code>，后两段可省略。<br>
+                    留空也可以先建记录，之后再补录发现。
+                </div>
+                {% for error in form.findings_text.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <h3 class="ui-section-title" style="margin-top:24px;">备注</h3>
+        <div class="ui-form-grid">
+            <div class="form-field form-field--wide">
+                {{ form.note(class="form-control", rows=3, placeholder="扫描背景、环境、已知问题等") }}
+            </div>
+        </div>
+
+        <div class="ui-form-actions">
+            <a class="ui-btn-secondary" href="{{ url_for('scans.detail', scan_id=scan.id) if editing else url_for('scans.index') }}">取消</a>
+            {{ form.submit(class="ui-btn-primary") }}
+        </div>
+    </form>
+</div>
+{% endblock %}

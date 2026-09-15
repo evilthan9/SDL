@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="ui-form-page">
+    <div class="page-header">
+        <h1 class="page-title">为项目新建漏洞</h1>
+    </div>
+
+    <form class="filter-card" method="POST" enctype="multipart/form-data" novalidate>
+        {{ form.hidden_tag() }}
+
+        <h3 class="ui-section-title">漏洞信息</h3>
+        <div class="ui-form-grid">
+            {# 项目由 URL 固定,只读展示。不要用 disabled 的 select ——
+               禁用控件不随表单提交,DataRequired 会失败,表单永远提交不成功。 #}
+            <div class="form-field">
+                <label>所属项目</label>
+                <input type="text" class="form-control" value="{{ project.name }}" disabled>
+                <div class="ui-hint">项目由入口固定，如需更换请从漏洞列表的「新增漏洞」进入。</div>
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.title.label.text }}</label>
+                {{ form.title(class="form-control", placeholder="一句话说明漏洞") }}
+                {% for error in form.title.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="form-field">
+                <label>{{ form.vuln_type.label.text }}</label>
+                {{ form.vuln_type(class="form-select") }}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.task_id.label.text }}</label>
+                {{ form.task_id(class="form-select") }}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.source.label.text }}</label>
+                {{ form.source(class="form-select") }}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.severity.label.text }}</label>
+                {{ form.severity(class="form-select") }}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.assignee_id.label.text }}</label>
+                {{ form.assignee_id(class="form-select") }}
+            </div>
+        </div>
+
+        <h3 class="ui-section-title" style="margin-top:24px;">详情与附件</h3>
+        <div class="ui-form-grid">
+            <div class="form-field form-field--wide">
+                <label class="ui-required">{{ form.description.label.text }}</label>
+                {{ form.description(class="form-control", rows=8, placeholder="复现步骤、影响范围、修复建议……") }}
+                <div class="ui-hint">支持多行文本，换行会被保留。</div>
+                {% for error in form.description.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="form-field form-field--wide">
+                <label>截图附件</label>
+                <input class="ui-file-input" type="file" name="screenshots" multiple
+                       accept="image/png,image/jpeg,image/gif,image/webp,image/bmp">
+                <div class="ui-hint">支持 png / jpg / gif / webp / bmp，可多选。</div>
+            </div>
+        </div>
+
+        <div class="ui-form-actions">
+            <a class="ui-btn-secondary" href="{{ url_for('projects.detail', id=project.id) }}">取消</a>
+            {{ form.submit(class="ui-btn-primary") }}
+        </div>
+    </form>
+</div>
+{% endblock %}

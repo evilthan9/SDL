@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<style>
+    .vn-split { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 20px; align-items: stretch; }
+    .vn-panel { background: #fff; border: 1px solid #e6ebf2; border-radius: 10px; padding: 18px 20px; }
+    .vn-panel h6 { margin: 0 0 14px; font-size: 14px; font-weight: 700; color: var(--text-main); padding-bottom: 10px; border-bottom: 1px solid var(--panel-border); }
+    .vn-field { margin-bottom: 16px; }
+    .vn-field label { display: block; font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; }
+    .vn-field .form-select, .vn-field .form-control { font-size: 13px; }
+    .vn-desc { display: flex; flex-direction: column; min-height: 560px; }
+    .vn-desc > label { font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 8px; flex: 0 0 auto; }
+    .vn-desc textarea { flex: 1; width: 100%; min-height: 480px; resize: vertical; padding: 10px 12px; font-size: 13px; line-height: 1.7; border: 1px solid #dfe5ef; border-radius: 8px; outline: none; box-sizing: border-box; }
+    .vn-desc textarea:focus { border-color: rgba(44, 126, 245, .6); box-shadow: 0 0 0 3px rgba(44, 126, 245, .1); }
+    .vn-note { margin-top: 12px; font-size: 12px; color: var(--text-faint); }
+    .rich-toolbar { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; }
+    .rich-img-btn { height: 30px; padding: 0 12px; border: 1px solid var(--border-input); background: #fff; border-radius: 6px; color: var(--text-body); cursor: pointer; font-size: 13px; }
+    .rich-hint { color: var(--text-faint); font-size: 12px; }
+    .rich-editor { flex: 1; width: 100%; min-height: 420px; box-sizing: border-box; padding: 10px 12px; border: 1px solid #dfe5ef; border-radius: 8px; background: #fff; color: var(--text-body); line-height: 1.7; overflow: auto; outline: none; }
+    .rich-editor:empty:before { content: attr(data-placeholder); color: var(--text-faint); }
+    .rich-editor img { max-width: 100%; height: auto; margin: 4px 0; border-radius: 6px; }
+    @media (max-width: 900px) { .vn-split { grid-template-columns: 1fr; } }
+</style>
+
+<div class="ui-form-page" style="max-width:1200px;">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div>
+            <h1 class="page-title">编辑漏洞详情</h1>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                <code style="color:var(--text-muted);">{{ vuln.vuln_code }}</code>
+                <span class="ui-badge {{ severity_class(vuln.severity) }}">{{ severity_label(vuln.severity) }}</span>
+                <span class="ui-badge {{ STATUS_BADGE_CLASSES.get(vuln.status, 'ui-badge--low') }}">{{ status_label(vuln.status) }}</span>
+            </div>
+        </div>
+        <a class="ui-btn-secondary" href="{{ url_for('vulnerabilities.detail', id=vuln.id) }}">← 返回详情</a>
+    </div>
+
+    <form class="filter-card" method="post" novalidate>
+        {{ form.hidden_tag() }}
+        <div class="vn-split">
+                    <div class="vn-panel">
+                        <h6>漏洞信息</h6>
+                        <div class="vn-field">
+                            <label>{{ form.title.label.text }}</label>
+                            {{ form.title(class="form-control") }}
+                            {% for e in form.title.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                        </div>
+                        <div class="vn-field">
+                            <label>所属项目（只读）</label>
+                            <input type="text" class="form-control" value="{{ vuln.project.name if vuln.project else '未关联项目' }}" disabled>
+                            <input type="hidden" name="project_id" value="{{ vuln.project_id or 0 }}">
+                        </div>
+                        <div class="vn-field">
+                            <label>漏洞状态（只读）</label>
+                            <input type="text" class="form-control" value="{{ status_label(vuln.status) }}" disabled>
+                            <div class="vn-note">状态只能通过「漏洞详情」页的流转按钮变更，以保证流转规则被校验。</div>
+                        </div>
+                        <div class="vn-field">
+                            <label>{{ form.assignee_id.label.text }}</label>
+                            {% if has_perm(current_user, PERM.VULN_ASSIGN) %}
+                            {{ form.assignee_id(class="form-select") }}
+                            {% else %}
+                            <input type="text" class="form-control" value="{{ vuln.assignee.username if vuln.assignee else '未分配' }}" disabled>
+                            {% endif %}
+                        </div>
+                        <div class="vn-field">
+                            <label>{{ form.task_id.label.text }}</label>
+                            {{ form.task_id(class="form-select") }}
+                            {% for e in form.task_id.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                        </div>
+                        <div class="vn-field">
+                            <label>{{ form.source.label.text }}</label>
+                            {{ form.source(class="form-select") }}
+                        </div>
+                        <div class="vn-field">
+                            <label>{{ form.severity.label.text }}</label>
+                            {{ form.severity(class="form-select") }}
+                        </div>
+                        <div class="vn-field">
+                            <label>{{ form.vuln_type.label.text }}</label>
+                            {{ form.vuln_type(class="form-select") }}
+                        </div>
+                    </div>
+                    <div class="vn-panel">
+                        <div class="vn-desc">
+                            <label>漏洞描述（可在文字中间直接插入截图）</label>
+                            <div class="rich-toolbar">
+                                <button type="button" class="rich-img-btn" onclick="document.getElementById('editFile').click()">🖼 插入截图</button>
+                                <span class="rich-hint">支持 Ctrl+V 直接粘贴截图到光标处；也可点“插入截图”选文件，文字粘贴仅保留纯文本。</span>
+                            </div>
+                            <div class="rich-editor" id="editArea" contenteditable="true" data-placeholder="请输入漏洞详情……"></div>
+                            <input type="hidden" name="description" id="editDesc">
+                            <input type="file" id="editFile" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" multiple>
+                            {% for e in form.description.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                            <div class="vn-note">截图会嵌入正文，保存后在详情页即可看到图文混排。</div>
+                        </div>
+                    </div>
+                </div>
+        <div class="ui-form-actions">
+            <button type="submit" class="ui-btn-primary">保存修改</button>
+            <a href="{{ url_for('vulnerabilities.detail', id=vuln.id) }}" class="ui-btn-soft">取消</a>
+        </div>
+    </form>
+</div>
+
+<script>
+    (function () {
+        var area = document.getElementById('editArea');
+        var file = document.getElementById('editFile');
+        var hid = document.getElementById('editDesc');
+        var init = {{ init_html|tojson }};
+        area.innerHTML = init;
+
+        function collect() { hid.value = area.innerHTML; }
+        var form = area.closest('form');
+        if (form) form.addEventListener('submit', collect);
+
+        function uploadImage(f) {
+            if (!/^image\//.test((f.type || ''))) return;
+            var fd = new FormData();
+            fd.append('image', f);
+            fetch("{{ url_for('vulnerabilities.upload_image') }}", {
+                method: 'POST', body: fd, credentials: 'same-origin',
+                // CSRFProtect 生效后,不带 token 的 POST 会被拒
+                headers: { 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content }
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.ok) {
+                        area.focus();
+                        document.execCommand('insertHTML', false, '<img src="' + d.url + '" alt="截图">');
+                    }
+                });
+        }
+
+        // Ctrl+V:剪贴板里有图片就直接上传插到光标处;否则只粘纯文本
+        area.addEventListener('paste', function (e) {
+            var dt = e.clipboardData || window.clipboardData;
+            var isImage = false;
+            if (dt && dt.items) {
+                for (var i = 0; i < dt.items.length; i++) {
+                    var it = dt.items[i];
+                    if (it.kind === 'file' && it.type && it.type.indexOf('image/') === 0) {
+                        isImage = true;
+                        var file = it.getAsFile();
+                        if (file) uploadImage(file);
+                    }
+                }
+            } else if (dt && dt.files && dt.files.length) {
+                for (var j = 0; j < dt.files.length; j++) {
+                    var f2 = dt.files[j];
+                    if (/^image\//.test(f2.type)) { isImage = true; uploadImage(f2); }
+                }
+            }
+            if (isImage) { e.preventDefault(); return; }
+            e.preventDefault();
+            var text = dt ? dt.getData('text/plain') : '';
+            document.execCommand('insertText', false, text);
+        });
+
+        file.addEventListener('change', function () {
+            var files = Array.prototype.slice.call(file.files || []);
+            file.value = '';
+            files.forEach(uploadImage);
+        });
+    })();
+</script>
+{% endblock %}

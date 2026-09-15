@@ -1,0 +1,525 @@
+{% extends "base.html" %}
+
+{% block title %}业务端{% endblock %}
+
+{% block content %}
+<style>
+    /* 本页大部分样式走 app.css 的公共组件（.ui-steps / .ui-block / .ui-meter 等），
+       这里只留流程页特有的少量补充。
+
+       改造前这个文件的 <style> 有 714 行、单文件混了 12 种蓝，markup 里还引用了
+       20 个全项目从未定义的 class（.question-card / .panel-top / .option-selected …），
+       渲染出来是一段无样式的裸 HTML。 */
+
+    .biz-link { color: var(--primary); font-weight: 600; text-decoration: none; }
+    .biz-link:hover { text-decoration: underline; }
+
+    .biz-mini {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid var(--border-input);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--text-body);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+    }
+
+    .biz-mini:hover { border-color: var(--primary); color: var(--primary); }
+    .biz-mini.is-primary { border-color: var(--primary); color: var(--primary); }
+    .biz-mini.is-danger { border-color: rgba(241,93,93,.4); color: var(--danger-ink); }
+    .biz-mini.is-muted { border-color: transparent; background: transparent; cursor: default; }
+
+    .biz-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .biz-actions form { display: inline; margin: 0; }
+
+    .biz-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(120px, 1fr));
+        gap: 14px;
+    }
+
+    .biz-stat { border: 1px solid var(--panel-border); border-radius: 8px; padding: 14px 16px; background: #fff; }
+    .biz-stat .k { color: var(--text-muted); font-size: 12px; margin-bottom: 6px; }
+    .biz-stat .v { font-size: 22px; font-weight: 700; color: var(--text-main); }
+    .biz-stat .v small { font-size: 12px; font-weight: 500; color: var(--text-faint); margin-left: 2px; }
+    .biz-stat.is-danger .v { color: var(--danger-ink); }
+    .biz-stat.is-ok .v { color: var(--success-ink); }
+
+    .biz-dev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .biz-dev-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--panel-border); }
+
+    @media (max-width: 900px) {
+        .biz-stat-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+        .biz-dev-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+<div class="page-header">
+    <h1 class="page-title">安全流程管理</h1>
+    <div class="ui-hint">
+        当前阶段：<strong>{{ stage_title }}</strong>
+        {% if current_user.role == 'admin' %}　（管理员视角，可见全部数据）{% endif %}
+    </div>
+</div>
+
+<div class="filter-card">
+    <div class="ui-steps">
+        {% for stage_key, stage_name in stage_order %}
+        <a href="{{ url_for('main.business', stage=stage_key) }}"
+           class="ui-step {% if stage_key == active_stage %}is-active{% endif %}">{{ stage_name }}</a>
+        {% if not loop.last %}<div class="ui-step-arrow"></div>{% endif %}
+        {% endfor %}
+    </div>
+</div>
+
+{# ============================================================ 定级备案 #}
+{% if active_stage == 'level' %}
+<div class="ui-block">
+    <div class="ui-block-head">
+        <span>定级备案</span>
+        <a class="ui-btn-primary ui-btn--sm" href="{{ url_for('main.level_assessment') }}">填写安全合规评估问卷</a>
+    </div>
+    <div class="ui-block-body">
+        <div class="ui-hint" style="margin-bottom:14px;">
+            对信息系统做重要性定级，判定是否需要在发布前开展安全测试。问卷结果会写入项目描述。
+        </div>
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="min-width:820px;">
+                <thead>
+                    <tr>
+                        <th>项目 / 迭代</th>
+                        <th style="width:120px;">负责人</th>
+                        <th style="width:120px;">重要等级</th>
+                        <th style="width:130px;">问卷状态</th>
+                        <th style="width:130px;">是否需要测试</th>
+                        <th style="width:90px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in level_projects %}
+                    <tr>
+                        <td class="task-name">{{ project.name }}</td>
+                        <td>{{ project.owner.username if project.owner else '—' }}</td>
+                        <td><span class="ui-badge {{ criticality_class(project.criticality) }}">{{ criticality_label(project.criticality) }}</span></td>
+                        <td>
+                            {% if project.questionnaire_completed %}
+                            <span class="ui-badge ui-badge--closed">已完成</span>
+                            {% else %}
+                            <span class="ui-badge ui-badge--pending">未填写</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ '需要' if project.security_test_required else '不需要' }}</td>
+                        <td><a class="biz-link" href="{{ url_for('projects.detail', id=project.id, next=url_for('main.business', stage='level')) }}">查看</a></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:40px;">暂无可定级的项目</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ============================================================ 需求控制 #}
+{% if active_stage == 'requirement' %}
+<div class="ui-block">
+    <div class="ui-block-head">
+        <span>迭代安全合规需求</span>
+        {% if has_perm(current_user, PERM.PROJECT_CREATE) %}
+        <a class="ui-btn-primary ui-btn--sm" href="{{ url_for('main.create_iteration') }}">＋ 创建迭代</a>
+        {% endif %}
+    </div>
+    <div class="ui-block-body">
+        <form method="get" action="{{ url_for('main.business') }}" style="margin-bottom:14px;">
+            <input type="hidden" name="stage" value="requirement">
+            <div class="filter-grid" style="grid-template-columns:repeat(3,minmax(160px,1fr));">
+                <div class="form-field">
+                    <label>迭代名称</label>
+                    <input type="search" name="iteration_name" value="{{ iteration_name }}" placeholder="关键字">
+                </div>
+                <div class="form-field">
+                    <label>显示范围</label>
+                    <label class="ui-check">
+                        <input type="checkbox" name="show_archived" value="1" {% if show_archived %}checked{% endif %}>
+                        显示已归档{% if archived_count %}（{{ archived_count }}）{% endif %}
+                    </label>
+                </div>
+                <div class="form-field" style="justify-content:flex-end;">
+                    <div class="toolbar-actions" style="justify-content:flex-end;">
+                        <a class="ui-btn-secondary" href="{{ url_for('main.business', stage='requirement') }}">重置</a>
+                        <button class="ui-btn-primary" type="submit">查询</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+
+        {# 原表格表头 7 列、表体 8 列，数据整体错位一格：
+           「操作」列显示的是"需要/不需要"，真正的按钮挤在无表头的第 8 列。 #}
+        <div style="overflow-x:auto;">
+            <table class="data-table iteration-table" style="min-width:980px;">
+                <thead>
+                    <tr>
+                        <th>迭代名称</th>
+                        <th style="width:100px;">系统版本</th>
+                        <th style="width:190px;">创建 ~ 更新</th>
+                        <th style="width:110px;">迭代状态</th>
+                        <th style="width:120px;">安全测试评估</th>
+                        <th style="width:100px;">推送状态</th>
+                        <th style="width:210px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for iteration in iterations %}
+                    <tr>
+                        <td class="task-name">
+                            {{ iteration.name }}
+                            {% if iteration.status == 'archived' %}
+                            <span class="ui-badge ui-badge--false-positive" style="margin-left:6px;">已归档</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ iteration.project_type or '—' }}</td>
+                        <td>{{ iteration.created_at.strftime('%Y-%m-%d') if iteration.created_at else '—' }} ~ {{ iteration.updated_at.strftime('%Y-%m-%d') if iteration.updated_at else '—' }}</td>
+                        <td><span class="ui-badge {{ criticality_class(iteration.criticality) }}">{{ criticality_label(iteration.criticality) }}</span></td>
+                        <td>{{ '需要' if iteration.security_test_required else '不需要' }}</td>
+                        <td>
+                            {% if iteration.requirements_pushed %}
+                            <span class="ui-badge ui-badge--closed">已推送</span>
+                            {% else %}
+                            <span class="ui-badge ui-badge--pending">待推送</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="biz-actions">
+                                <a class="biz-mini" href="{{ url_for('projects.detail', id=iteration.id, next=url_for('main.business', stage='requirement')) }}">详情</a>
+                                {% if has_perm(current_user, PERM.ITERATION_MANAGE) %}
+                                    {% if iteration.security_test_required and not iteration.requirements_pushed %}
+                                    <form method="post" action="{{ url_for('main.push_iteration', project_id=iteration.id) }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button class="biz-mini is-primary" type="submit">推送至测试</button>
+                                    </form>
+                                    {% endif %}
+                                    <form method="post" action="{{ url_for('main.delete_iteration', project_id=iteration.id) }}"
+                                          onsubmit="return confirm('确定删除该迭代吗？关联的测试任务与测试数据也会被一并处理。');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button class="biz-mini is-danger" type="submit">删除</button>
+                                    </form>
+                                {% endif %}
+                            </span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" style="text-align:center;color:var(--text-faint);padding:40px;">暂无项目迭代，请先创建。</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ============================================================ 研发控制 #}
+{% if active_stage == 'development' %}
+{% set s = dev_stats %}
+<div class="ui-block">
+    <div class="ui-block-head">
+        <span>漏洞修复进度</span>
+        <span class="ui-hint" style="margin:0;">统计范围：当前账号可见的漏洞</span>
+    </div>
+    <div class="ui-block-body">
+        <div class="biz-stat-grid" style="margin-bottom:18px;">
+            <div class="biz-stat">
+                <div class="k">漏洞总数</div>
+                <div class="v">{{ s.total }}<small>个</small></div>
+            </div>
+            <div class="biz-stat {% if s.open_total %}is-danger{% endif %}">
+                <div class="k">待处理</div>
+                <div class="v">{{ s.open_total }}<small>个</small></div>
+            </div>
+            <div class="biz-stat is-ok">
+                <div class="k">已闭环</div>
+                <div class="v">{{ s.status_counts.get('closed', 0) }}<small>个</small></div>
+            </div>
+            <div class="biz-stat {% if s.overdue %}is-danger{% endif %}">
+                <div class="k">逾期未修复</div>
+                <div class="v">{{ s.overdue }}<small>个</small></div>
+            </div>
+            <div class="biz-stat">
+                <div class="k">闭环率</div>
+                <div class="v">
+                    {% if s.total %}{{ (s.status_counts.get('closed', 0) / s.total * 100) | round(1) }}<small>%</small>{% else %}—{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% if s.total %}
+        {% set closed_rate = (s.status_counts.get('closed', 0) / s.total * 100) | round(1) %}
+        <div class="ui-meter {% if closed_rate < 50 %}is-danger{% elif closed_rate < 80 %}is-warning{% endif %}" style="margin-bottom:22px;">
+            <span style="width: {{ closed_rate }}%"></span>
+        </div>
+        {% endif %}
+
+        <div class="biz-dev-grid">
+            <div>
+                <div class="ui-section-title">按状态分布</div>
+                {% for status, label in STATUS_LABELS.items() %}
+                <div class="biz-dev-row">
+                    <span class="ui-badge {{ STATUS_BADGE_CLASSES.get(status) }}">{{ label }}</span>
+                    <strong>{{ s.status_counts.get(status, 0) }}</strong>
+                </div>
+                {% endfor %}
+            </div>
+            <div>
+                <div class="ui-section-title">按修复责任人（待处理数）</div>
+                {% for name, n in s.by_assignee %}
+                <div class="biz-dev-row">
+                    <span>{{ name }}</span>
+                    <strong style="color:var(--danger-ink);">{{ n }}</strong>
+                </div>
+                {% else %}
+                <div class="ui-hint" style="padding:12px 0;">当前没有待处理的漏洞。</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{# 安全扫描结果 —— SDL 里"研发控制"正是自动化检测落地的环节 #}
+<div class="ui-block">
+    <div class="ui-block-head">
+        <span>安全扫描结果</span>
+        <a class="biz-link" href="{{ url_for('scans.index') }}" style="font-size:13px;">查看全部扫描 →</a>
+    </div>
+    <div class="ui-block-body">
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="min-width:900px;">
+                <thead>
+                    <tr>
+                        <th style="width:150px;">扫描类型</th>
+                        <th style="width:90px;">扫描次数</th>
+                        <th style="width:230px;">累计发现（严/高/中/低）</th>
+                        <th style="width:150px;">已发现未跟进</th>
+                        <th>最近一次扫描</th>
+                        <th style="width:90px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for section in dev_scans %}
+                    <tr>
+                        <td><span class="ui-badge {{ scan_type_class(section.key) }}">{{ section.label }}</span></td>
+                        <td>{{ section.runs }}</td>
+                        <td>
+                            {% if section.total %}
+                            <span class="ui-badge ui-badge--critical">{{ section.critical }}</span>
+                            <span class="ui-badge ui-badge--high">{{ section.high }}</span>
+                            <span class="ui-badge ui-badge--medium">{{ section.medium }}</span>
+                            <span class="ui-badge ui-badge--low">{{ section.low }}</span>
+                            {% else %}
+                            <span class="ui-hint" style="margin:0;">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if section.pending %}
+                            <span class="ui-badge ui-badge--pending">{{ section.pending }} 条待梳理</span>
+                            {% else %}
+                            <span class="ui-hint" style="margin:0;">已全部跟进</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if section.latest %}
+                            <code style="font-size:12px;">{{ section.latest.scan_code }}</code>
+                            <span class="ui-hint" style="margin-left:6px;">{{ section.latest.tool or '—' }}</span>
+                            <span class="ui-hint" style="margin-left:6px;">{{ section.latest.created_at.strftime('%Y-%m-%d') if section.latest.created_at else '' }}</span>
+                            {% else %}
+                            <span class="ui-hint" style="margin:0;">尚未开展此类扫描</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if section.latest %}
+                            <a class="table-link" href="{{ url_for('scans.detail', scan_id=section.latest.id) }}">查看</a>
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if has_perm(current_user, PERM.SCAN_CREATE) %}
+        <div style="margin-top:14px;">
+            <a class="ui-btn-primary ui-btn--sm" href="{{ url_for('scans.create') }}">＋ 录入扫描记录</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ============================================================ 测试控制 #}
+{% if active_stage == 'testing' %}
+<div class="ui-block">
+    <div class="ui-block-head">
+        <span>安全测试任务</span>
+        {% if quick_form %}
+        <button type="button" class="ui-btn-primary ui-btn--sm" data-bs-toggle="modal" data-bs-target="#quickTaskModal">＋ 新建安全测试任务</button>
+        {% endif %}
+    </div>
+    <div class="ui-block-body">
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="min-width:1040px;">
+                <thead>
+                    <tr>
+                        <th style="width:60px;">ID</th>
+                        <th>任务名称</th>
+                        <th style="width:110px;">测试类型</th>
+                        <th style="width:190px;">关联迭代</th>
+                        <th style="width:120px;">测试人员</th>
+                        <th style="width:120px;">任务状态</th>
+                        <th style="width:200px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in tasks %}
+                    <tr>
+                        <td>{{ task.id }}</td>
+                        <td class="task-name">{{ task.name }}</td>
+                        <td><span class="tag-badge">{{ test_type_label(task.test_type) }}</span></td>
+                        <td>
+                            {% if task.project %}
+                            <a class="biz-link" href="{{ url_for('projects.vulnerabilities', id=task.project.id, next=url_for('main.business', stage='testing')) }}">{{ task.project.name }}</a>
+                            {% else %}未关联{% endif %}
+                        </td>
+                        <td>{{ task.tester.username if task.tester else ('未分配' if task.submission_status == 'submitted' else '待推送') }}</td>
+                        <td><span class="status-badge {{ task_status_class(task.status) }}">{{ task_status_label(task.status) }}</span></td>
+                        <td>
+                            <span class="biz-actions">
+                                {% if task.submission_status == 'draft' and task.creator_id == current_user.id %}
+                                <form method="post" action="{{ url_for('main.push_testing_task', task_id=task.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="biz-mini is-primary">推送至测试端</button>
+                                </form>
+                                {% elif task.submission_status == 'draft' %}
+                                <span class="biz-mini is-muted" style="color:var(--warning-ink);">待创建人推送</span>
+                                {% endif %}
+                                {% if has_perm(current_user, PERM.CASE_UPDATE) and (is_admin(current_user) or task.tester_id == current_user.id) %}
+                                <a class="biz-mini" href="{{ url_for('projects.task_workflow', id=task.id) }}">工作流</a>
+                                {% endif %}
+                                {% if task.project %}
+                                <a class="biz-mini" href="{{ url_for('projects.vulnerabilities', id=task.project.id, next=url_for('main.business', stage='testing')) }}">项目漏洞</a>
+                                {% endif %}
+                            </span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" style="text-align:center;color:var(--text-faint);padding:40px;">暂无安全测试任务</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if quick_form %}
+<div class="modal fade" id="quickTaskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{{ url_for('main.create_testing_task_quick') }}" novalidate>
+                {{ quick_form.hidden_tag() }}
+                <div class="modal-header">
+                    <h5 class="modal-title">新建安全测试任务</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-field" style="margin-bottom:14px;">
+                        <label>{{ quick_form.iteration_id.label.text }}</label>
+                        {{ quick_form.iteration_id(class="form-select") }}
+                    </div>
+                    <div class="form-field" style="margin-bottom:14px;">
+                        <label class="ui-required">{{ quick_form.test_type.label.text }}</label>
+                        {{ quick_form.test_type(class="form-select") }}
+                    </div>
+                    <div class="form-field" style="margin-bottom:14px;">
+                        <label>{{ quick_form.name.label.text }}</label>
+                        {{ quick_form.name(class="form-control", placeholder="留空则按所选迭代自动生成") }}
+                    </div>
+                    <div class="ui-form-grid">
+                        <div class="form-field">
+                            <label>{{ quick_form.start_date.label.text }}</label>
+                            {{ quick_form.start_date(class="form-control") }}
+                        </div>
+                        <div class="form-field">
+                            <label>{{ quick_form.end_date.label.text }}</label>
+                            {{ quick_form.end_date(class="form-control") }}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="ui-btn-secondary" data-bs-dismiss="modal">取消</button>
+                    {{ quick_form.submit(class="ui-btn-primary") }}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+{# ============================================================ 发布控制 #}
+{% if active_stage == 'release' %}
+<div class="ui-block">
+    <div class="ui-block-head">
+        <span>发布前安全确认</span>
+        <span class="ui-hint" style="margin:0;">高危及以上全部闭环、无 SLA 逾期、测试任务已归档，才可发布</span>
+    </div>
+    <div class="ui-block-body">
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="min-width:940px;">
+                <thead>
+                    <tr>
+                        <th>项目 / 迭代</th>
+                        <th style="width:100px;">漏洞总数</th>
+                        <th style="width:100px;">未闭环</th>
+                        <th style="width:150px;">高危及以上未闭环</th>
+                        <th style="width:110px;">SLA 逾期</th>
+                        <th style="width:140px;">未归档测试任务</th>
+                        <th style="width:110px;">发布结论</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in release_rows %}
+                    <tr>
+                        <td class="task-name">{{ row.project.name }}</td>
+                        <td>{{ row.total }}</td>
+                        <td>{{ row.open_total }}</td>
+                        <td>
+                            {% if row.high_open %}
+                            <span class="ui-badge ui-badge--critical">{{ row.high_open }}</span>
+                            {% else %}0{% endif %}
+                        </td>
+                        <td>
+                            {% if row.overdue %}
+                            <span class="ui-badge ui-badge--high">{{ row.overdue }}</span>
+                            {% else %}0{% endif %}
+                        </td>
+                        <td>{{ row.tasks_pending }}</td>
+                        <td>
+                            {% if row.ready %}
+                            <span class="ui-badge ui-badge--closed">可发布</span>
+                            {% else %}
+                            <span class="ui-badge ui-badge--critical">待整改</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" style="text-align:center;color:var(--text-faint);padding:40px;">暂无进行中的项目</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

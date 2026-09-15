@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="ui-form-page">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+        <div>
+            <h1 class="page-title">
+                {{ project.name }}
+                {% if project.status == 'archived' %}
+                <span class="ui-badge ui-badge--false-positive" style="vertical-align:middle;">已归档</span>
+                {% endif %}
+            </h1>
+            <div class="ui-hint">{{ project.department or '未设置部门' }} · 负责人 {{ project.owner.username if project.owner else '未指定' }}</div>
+        </div>
+        <a class="ui-btn-secondary" href="{{ back_url }}">← 返回</a>
+    </div>
+
+    <div class="filter-card">
+        <h3 class="ui-section-title">基本信息</h3>
+        <div class="ui-form-grid">
+            <div class="form-field">
+                <label>项目类型</label>
+                <div>{{ project_type_label(project.project_type) }}</div>
+            </div>
+            <div class="form-field">
+                <label>重要等级</label>
+                <div><span class="ui-badge {{ criticality_class(project.criticality) }}">{{ criticality_label(project.criticality) }}</span></div>
+            </div>
+            <div class="form-field">
+                <label>运行环境</label>
+                <div>{{ environment_label(project.environment) }}</div>
+            </div>
+            <div class="form-field">
+                <label>创建时间</label>
+                <div>{{ project.created_at.strftime('%Y-%m-%d %H:%M') if project.created_at else '未知' }}</div>
+            </div>
+        </div>
+        {% if project.description %}
+        <div class="form-field" style="margin-top:16px;">
+            <label>描述</label>
+            <div style="color:var(--text-muted);line-height:1.8;white-space:pre-wrap;">{{ project.description }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="filter-card">
+        <h3 class="ui-section-title">漏洞概况</h3>
+        <div class="ui-form-grid" style="grid-template-columns:repeat(4,minmax(120px,1fr));">
+            <div class="form-field">
+                <label>可见漏洞总数</label>
+                <div style="font-size:22px;font-weight:700;">{{ vuln_total }}</div>
+            </div>
+            <div class="form-field">
+                <label>待修复</label>
+                <div style="font-size:22px;font-weight:700;">{{ status_counts.get('pending', 0) }}</div>
+            </div>
+            <div class="form-field">
+                <label>已闭环</label>
+                <div style="font-size:22px;font-weight:700;color:var(--success);">{{ status_counts.get('closed', 0) }}</div>
+            </div>
+            <div class="form-field">
+                <label>逾期未修复</label>
+                <div style="font-size:22px;font-weight:700;{% if overdue %}color:var(--danger);{% endif %}">{{ overdue }}</div>
+            </div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+            {% for value, label in STATUS_LABELS.items() %}
+            {% if status_counts.get(value) %}
+            <span class="ui-badge {{ STATUS_BADGE_CLASSES.get(value) }}">{{ label }} {{ status_counts.get(value) }}</span>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div class="ui-hint" style="margin-top:10px;">关联测试任务 {{ task_count }} 个。数字随当前账号的可见范围统计。</div>
+    </div>
+
+    <div class="filter-card">
+        <h3 class="ui-section-title">操作</h3>
+        <div class="ui-form-actions" style="margin-top:0;padding-top:0;border-top:0;justify-content:flex-start;">
+            <a class="ui-btn-primary" href="{{ url_for('projects.vulnerabilities', id=project.id) }}">查看项目漏洞</a>
+
+            {% if has_perm(current_user, PERM.VULN_CREATE) %}
+            <a class="ui-btn-secondary" href="{{ url_for('vulnerabilities.create_for_project', project_id=project.id) }}">＋ 新建漏洞</a>
+            {% endif %}
+
+            {% if can_manage %}
+            <a class="ui-btn-secondary" href="{{ url_for('projects.edit', id=project.id) }}">编辑项目</a>
+
+            {% if project.status == 'archived' %}
+            <form method="post" action="{{ url_for('projects.restore', id=project.id) }}" style="display:inline;margin:0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="ui-btn-secondary">恢复为进行中</button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('projects.archive', id=project.id) }}" style="display:inline;margin:0;"
+                  onsubmit="return confirm('确认归档项目「{{ project.name }}」？\n\n归档后它将不再出现在“新建漏洞”的项目下拉与业务端迭代列表中，历史数据保留，可随时恢复。')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="ui-btn-soft">归档</button>
+            </form>
+            {% endif %}
+            {% endif %}
+
+            {% if can_delete %}
+            <form method="post" action="{{ url_for('projects.delete', id=project.id) }}" style="display:inline;margin:0;"
+                  onsubmit="return confirm('确认删除项目「{{ project.name }}」？\n\n将连带删除 {{ task_count }} 个测试任务；{{ vuln_total }} 条漏洞会移入回收站（可恢复）。\n此操作不可撤销。')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="ui-btn-secondary" style="color:var(--danger);border-color:rgba(241,93,93,.4);">删除项目</button>
+            </form>
+            {% endif %}
+        </div>
+        {% if project.status == 'archived' %}
+        <div class="ui-hint">该项目已归档：不会出现在新建漏洞的项目下拉与业务端迭代列表中。</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

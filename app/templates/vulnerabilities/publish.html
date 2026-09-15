@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}漏洞发布{% endblock %}
+
+{% block content %}
+<style>
+    .publish-page { background: var(--bg-soft); color: var(--text-main); }
+    .publish-title { padding: 14px 22px; background: #fff; border-bottom: 1px solid var(--panel-border); font-size: 18px; font-weight: 700; }
+    .publish-toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px; background: #fff; border-bottom: 8px solid #f1f3f6; }
+    .publish-btn { height: 36px; min-width: 78px; padding: 0 18px; border: 0; border-radius: 3px; color: #fff; cursor: pointer; }
+    .publish-save { background: #10a94b; }
+    .publish-cancel { background: #747b84; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    .publish-grid { display: grid; grid-template-columns: minmax(360px, 38%) minmax(0, 62%); gap: 18px; padding: 22px; }
+    .publish-panel { min-height: 570px; padding: 22px; background: #fff; border: 1px solid #e5e9ef; border-radius: 3px; }
+    .publish-panel-title { margin-bottom: 22px; color: var(--text-main); font-size: 16px; font-weight: 600; }
+    .publish-field { margin-bottom: 18px; }
+    .publish-field label { display: block; margin-bottom: 8px; color: var(--text-body); font-size: 13px; }
+    .publish-field label::before { content: '* '; color: var(--danger-ink); }
+    .publish-field input, .publish-field select, .publish-field textarea { width: 100%; min-height: 38px; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-input); border-radius: 3px; color: var(--text-body); background: #fff; }
+    .publish-field textarea { min-height: 300px; resize: vertical; }
+    .publish-panel.detail-panel { display: flex; flex-direction: column; }
+    .publish-panel.detail-panel .publish-field { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
+    .publish-panel.detail-panel textarea { flex: 1; width: 100%; min-height: 460px; box-sizing: border-box; line-height: 1.7; }
+    .publish-readonly { background: #f5f7fa !important; }
+    .publish-context { margin-bottom: 18px; padding: 12px; border: 1px solid #e5e9ef; background: var(--bg-stripe); color: #6b788a; font-size: 13px; line-height: 1.8; }
+    .publish-errors { color: var(--danger-ink); font-size: 12px; }
+    .rich-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .rich-img-btn { height: 30px; padding: 0 12px; border: 1px solid var(--border-input); background: #fff; border-radius: 3px; color: var(--text-body); cursor: pointer; }
+    .rich-hint { color: var(--text-faint); font-size: 12px; }
+    .rich-editor { flex: 1; width: 100%; min-height: 300px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border-input); border-radius: 3px; background: #fff; color: var(--text-body); line-height: 1.7; overflow: auto; outline: none; }
+    .rich-editor:empty:before { content: attr(data-placeholder); color: var(--text-faint); }
+    .rich-editor img { max-width: 100%; height: auto; margin: 4px 0; border-radius: 6px; }
+    @media (max-width: 800px) { .publish-grid { grid-template-columns: 1fr; } .publish-panel { min-height: auto; } }
+</style>
+
+<div class="publish-page ui-page--fullbleed">
+    <div class="publish-title">漏洞发布</div>
+    <div class="publish-toolbar">
+        <button class="publish-btn publish-save" type="submit" form="publishForm">发布</button>
+        <a class="publish-btn publish-cancel" href="{{ url_for('projects.task_workflow', id=task.id) }}">取消</a>
+    </div>
+    <form id="publishForm" method="POST">
+        {{ form.hidden_tag() }}
+        <input type="hidden" name="assignee_id" value="0">
+        <div class="publish-grid">
+            <div class="publish-panel">
+                <div class="publish-panel-title">漏洞信息</div>
+                <div class="publish-context">关联任务：{{ task.name }}<br>测试用例：No.{{ test_case.case_number }} {{ test_case.name }}</div>
+                <div class="publish-field">
+                    {{ form.title.label }}{{ form.title(placeholder='请输入漏洞标题（可自定义）') }}
+                    {% for error in form.title.errors %}<div class="publish-errors">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="publish-field">{{ form.vuln_type.label }}{{ form.vuln_type() }}</div>
+                <div class="publish-field">{{ form.task_id.label }}{{ form.task_id(class="publish-readonly") }}</div>
+                <div class="publish-field">{{ form.project_id.label }}{{ form.project_id() }}</div>
+                <div class="publish-field">{{ form.source.label }}{{ form.source() }}</div>
+                <div class="publish-field">{{ form.severity.label }}{{ form.severity() }}</div>
+            </div>
+            <div class="publish-panel detail-panel">
+                <div class="publish-panel-title">详情</div>
+                <div class="publish-field">
+                    <label>漏洞描述（可在文字中间直接插入截图）</label>
+                    <div class="rich-toolbar">
+                        <button type="button" class="rich-img-btn" onclick="document.getElementById('pubFile').click()">🖼 插入截图</button>
+                        <span class="rich-hint">支持 Ctrl+V 直接粘贴截图到光标处；也可点“插入截图”选文件，文字粘贴仅保留纯文本。</span>
+                    </div>
+                    <div class="rich-editor" id="pubArea" contenteditable="true" data-placeholder="请输入漏洞详情……"></div>
+                    <input type="hidden" name="description" id="pubDesc">
+                    <input type="file" id="pubFile" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" multiple>
+                    {% for error in form.description.errors %}<div class="publish-errors">{{ error }}</div>{% endfor %}
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+<script>
+    (function () {
+        var area = document.getElementById('pubArea');
+        var file = document.getElementById('pubFile');
+        var hid = document.getElementById('pubDesc');
+        var init = {{ init_html|tojson }};
+        area.innerHTML = init;
+
+        function collect() { hid.value = area.innerHTML; }
+        var form = document.getElementById('publishForm');
+        if (form) form.addEventListener('submit', collect);
+
+        function uploadImage(f) {
+            if (!/^image\//.test((f.type || ''))) return;
+            var fd = new FormData();
+            fd.append('image', f);
+            fetch("{{ url_for('vulnerabilities.upload_image') }}", {
+                method: 'POST', body: fd, credentials: 'same-origin',
+                // CSRFProtect 生效后,不带 token 的 POST 会被拒
+                headers: { 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content }
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.ok) {
+                        area.focus();
+                        document.execCommand('insertHTML', false, '<img src="' + d.url + '" alt="截图">');
+                    }
+                });
+        }
+
+        // Ctrl+V:剪贴板里有图片就直接上传插到光标处;否则只粘纯文本
+        area.addEventListener('paste', function (e) {
+            var dt = e.clipboardData || window.clipboardData;
+            var isImage = false;
+            if (dt && dt.items) {
+                for (var i = 0; i < dt.items.length; i++) {
+                    var it = dt.items[i];
+                    if (it.kind === 'file' && it.type && it.type.indexOf('image/') === 0) {
+                        isImage = true;
+                        var file = it.getAsFile();
+                        if (file) uploadImage(file);
+                    }
+                }
+            } else if (dt && dt.files && dt.files.length) {
+                for (var j = 0; j < dt.files.length; j++) {
+                    var f2 = dt.files[j];
+                    if (/^image\//.test(f2.type)) { isImage = true; uploadImage(f2); }
+                }
+            }
+            if (isImage) { e.preventDefault(); return; }
+            e.preventDefault();
+            var text = dt ? dt.getData('text/plain') : '';
+            document.execCommand('insertText', false, text);
+        });
+
+        file.addEventListener('change', function () {
+            var files = Array.prototype.slice.call(file.files || []);
+            file.value = '';
+            files.forEach(uploadImage);
+        });
+    })();
+</script>
+{% endblock %}

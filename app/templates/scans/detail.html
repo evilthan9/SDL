@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}{{ scan.scan_code }}{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+    <div>
+        <h1 class="page-title"><code>{{ scan.scan_code }}</code></h1>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+            <span class="ui-badge {{ scan_type_class(scan.scan_type) }}">{{ scan_type_label(scan.scan_type) }}</span>
+            <span class="ui-badge {{ scan_status_class(scan.status) }}">{{ scan_status_label(scan.status) }}</span>
+            {% if scan.is_deleted %}<span class="ui-badge ui-badge--critical">已删除</span>{% endif %}
+        </div>
+    </div>
+    <div class="toolbar-actions">
+        <a class="ui-btn-secondary" href="{{ url_for('scans.index') }}">← 返回列表</a>
+        {% if can_manage %}
+        <a class="ui-btn-secondary" href="{{ url_for('scans.edit', scan_id=scan.id) }}">编辑</a>
+        <form method="post" action="{{ url_for('scans.delete', scan_id=scan.id) }}" style="display:inline;margin:0;"
+              onsubmit="return confirm('确认删除该扫描记录？记录会进入已删除状态，历史漏洞不受影响。')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="ui-btn-secondary" style="color:var(--danger);border-color:rgba(241,93,93,.4);">删除</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="filter-card">
+    <h3 class="ui-section-title">扫描信息</h3>
+    <div class="ui-form-grid" style="grid-template-columns:repeat(3,minmax(160px,1fr));">
+        <div class="form-field">
+            <label>扫描工具</label>
+            <div>{{ scan.tool or '—' }}</div>
+        </div>
+        <div class="form-field">
+            <label>关联项目</label>
+            <div>
+                {% if scan.project %}
+                <a class="table-link" href="{{ url_for('projects.detail', id=scan.project.id, next=url_for('scans.detail', scan_id=scan.id)) }}">{{ scan.project.name }}</a>
+                {% else %}未关联{% endif %}
+            </div>
+        </div>
+        <div class="form-field">
+            <label>录入人</label>
+            <div>{{ scan.creator.username if scan.creator else '—' }}</div>
+        </div>
+        <div class="form-field form-field--wide">
+            <label>扫描对象</label>
+            <div style="word-break:break-all;">{{ scan.target or '—' }}</div>
+        </div>
+        <div class="form-field">
+            <label>开始时间</label>
+            <div>{{ scan.started_at.strftime('%Y-%m-%d') if scan.started_at else '—' }}</div>
+        </div>
+        <div class="form-field">
+            <label>结束时间</label>
+            <div>{{ scan.finished_at.strftime('%Y-%m-%d') if scan.finished_at else '—' }}</div>
+        </div>
+        <div class="form-field">
+            <label>录入时间</label>
+            <div>{{ scan.created_at.strftime('%Y-%m-%d %H:%M') if scan.created_at else '—' }}</div>
+        </div>
+    </div>
+    {% if scan.note %}
+    <div class="form-field" style="margin-top:16px;">
+        <label>备注</label>
+        <div style="color:var(--text-body);line-height:1.8;white-space:pre-wrap;">{{ scan.note }}</div>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <span class="ui-hint" style="margin:0;">发现合计 <strong>{{ scan.total_findings }}</strong> 条：</span>
+        <span class="ui-badge ui-badge--critical">严重 {{ scan.critical_count }}</span>
+        <span class="ui-badge ui-badge--high">高危 {{ scan.high_count }}</span>
+        <span class="ui-badge ui-badge--medium">中危 {{ scan.medium_count }}</span>
+        <span class="ui-badge ui-badge--low">低危 {{ scan.low_count }}</span>
+    </div>
+</div>
+
+<div class="table-card" style="margin-top:18px;">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-weight:700;color:var(--text-main);">发现明细（{{ findings | length }}）</span>
+        {% if can_convert %}
+        <span class="ui-hint" style="margin:0;">勾选若干条 → 转成漏洞，之后走「待修复 → 已修复 → 已闭环」的流转</span>
+        {% endif %}
+    </div>
+
+    <form method="post" action="{{ url_for('scans.convert_findings', scan_id=scan.id) }}" id="convertForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="min-width:1080px;">
+                <thead>
+                    <tr>
+                        {% if can_convert %}<th style="width:42px;text-align:center;">
+                            <input type="checkbox" onclick="document.querySelectorAll('.finding-check').forEach(function(c){ if(!c.disabled) c.checked=this.checked; }, this)">
+                        </th>{% endif %}
+                        <th style="width:100px;">等级</th>
+                        <th style="width:130px;">规则编号</th>
+                        <th>问题标题</th>
+                        <th style="width:240px;">位置</th>
+                        <th style="width:110px;">状态</th>
+                        <th style="width:150px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for finding in findings %}
+                    <tr>
+                        {% if can_convert %}
+                        <td style="text-align:center;">
+                            <input type="checkbox" class="finding-check" name="finding_ids" value="{{ finding.id }}"
+                                   {% if finding.status != 'open' %}disabled{% endif %}>
+                        </td>
+                        {% endif %}
+                        <td><span class="ui-badge {{ severity_class(finding.severity) }}">{{ severity_label(finding.severity) }}</span></td>
+                        <td><code>{{ finding.rule_id or '—' }}</code></td>
+                        <td class="task-name" style="font-weight:500;">{{ finding.title }}</td>
+                        <td style="word-break:break-all;color:var(--text-muted);">{{ finding.location or '—' }}</td>
+                        <td><span class="ui-badge {{ finding_status_class(finding.status) }}">{{ finding_status_label(finding.status) }}</span></td>
+                        <td>
+                            {# 表单不能嵌套。这一行在「转漏洞」的外层表单里,所以单条操作
+                               的按钮要用 form 属性关联到表格**外面**的独立表单。 #}
+                            {% if finding.status == 'converted' and finding.vulnerability %}
+                            <a class="table-link" href="{{ url_for('vulnerabilities.detail', id=finding.vulnerability.id) }}">查看漏洞</a>
+                            {% elif finding.status == 'ignored' and can_triage %}
+                            <button type="submit" form="reopen-finding-{{ finding.id }}" class="table-link"
+                                    style="border:0;background:transparent;cursor:pointer;padding:0;">恢复</button>
+                            {% elif finding.status == 'open' and can_triage %}
+                            <button type="submit" form="ignore-finding-{{ finding.id }}" class="table-link"
+                                    style="border:0;background:transparent;color:var(--text-muted);cursor:pointer;padding:0;"
+                                    onclick="return confirm('确认把该发现标记为忽略？（误报或风险接受）')">忽略</button>
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="{{ 7 if can_convert else 6 }}" style="text-align:center;color:var(--text-faint);padding:42px;">
+                        本次扫描没有记录发现明细
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if can_convert %}
+        {% set open_count = findings | selectattr('status', 'equalto', 'open') | list | length %}
+        <div style="padding:14px 18px;border-top:1px solid var(--panel-border);display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span class="ui-hint" style="margin:0;">待处理发现 {{ open_count }} 条</span>
+            <label class="ui-check" style="height:auto;">
+                指派修复人
+                <select name="assignee_id" class="form-select" style="height:34px;width:180px;">
+                    <option value="">待分配</option>
+                    {% for user in assignees %}
+                    <option value="{{ user.id }}">{{ user.username }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit" class="ui-btn-primary"
+                    {% if not scan.project_id %}disabled title="该扫描未关联项目，请先编辑扫描记录"{% endif %}>
+                转为漏洞
+            </button>
+        </div>
+        {% if not scan.project_id %}
+        <div class="ui-hint" style="padding:0 18px 14px;">该扫描未关联项目，无法生成漏洞记录 —— 漏洞必须挂在项目下。请先点右上角「编辑」选择项目。</div>
+        {% endif %}
+        {% endif %}
+    </form>
+
+    {# 单条发现的处置表单,放在「转漏洞」表单之外（见上方注释） #}
+    {% if can_triage %}
+    {% for finding in findings %}
+        {% if finding.status == 'open' %}
+        <form id="ignore-finding-{{ finding.id }}" method="post"
+              action="{{ url_for('scans.ignore_finding', finding_id=finding.id) }}" style="display:none">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        </form>
+        {% elif finding.status == 'ignored' %}
+        <form id="reopen-finding-{{ finding.id }}" method="post"
+              action="{{ url_for('scans.reopen_finding', finding_id=finding.id) }}" style="display:none">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        </form>
+        {% endif %}
+    {% endfor %}
+    {% endif %}
+</div>
+{% endblock %}

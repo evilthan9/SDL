@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+{# 新建与编辑共用这个模板:传入 project 即为编辑模式 #}
+{% set editing = project is defined and project %}
+
+<div class="ui-form-page">
+    <div class="page-header">
+        <h1 class="page-title">{{ '编辑项目' if editing else '新建项目' }}</h1>
+    </div>
+
+    <form class="filter-card" method="POST" novalidate>
+        {{ form.hidden_tag() }}
+
+        <h3 class="ui-section-title">项目信息</h3>
+        <div class="ui-form-grid">
+            <div class="form-field form-field--wide">
+                <label class="ui-required">{{ form.name.label.text }}</label>
+                {{ form.name(class="form-control", placeholder="项目 / 迭代名称") }}
+                {% for error in form.name.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.project_type.label.text }}</label>
+                {{ form.project_type(class="form-select") }}
+            </div>
+
+            <div class="form-field">
+                <label>{{ form.department.label.text }}</label>
+                {{ form.department(class="form-control", placeholder="所属部门") }}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.environment.label.text }}</label>
+                {{ form.environment(class="form-select") }}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.criticality.label.text }}</label>
+                {{ form.criticality(class="form-select") }}
+                <div class="ui-hint">重要等级参与漏洞风险评分与 SLA 计算。</div>
+            </div>
+
+            <div class="form-field form-field--wide">
+                <label>{{ form.description.label.text }}</label>
+                {{ form.description(class="form-control", rows=5, placeholder="项目背景、范围、备注……") }}
+            </div>
+        </div>
+
+        <div class="ui-form-actions">
+            {% if editing %}
+            <a class="ui-btn-secondary" href="{{ url_for('projects.detail', id=project.id) }}">取消</a>
+            {% else %}
+            <a class="ui-btn-secondary" href="{{ url_for('projects.list') }}">取消</a>
+            {% endif %}
+            {{ form.submit(class="ui-btn-primary") }}
+        </div>
+    </form>
+</div>
+{% endblock %}

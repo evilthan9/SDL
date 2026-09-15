@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}审计日志{% endblock %}
+
+{% block content %}
+<style>
+    .au-wrap { background: var(--bg-soft); padding: 0 22px 30px; color: var(--text-main); }
+    .au-title { padding: 16px 0 10px; font-size: 20px; font-weight: 700; }
+    .au-sub { color: var(--text-faint); font-size: 13px; margin-bottom: 14px; }
+    .au-card { background: #fff; border: 1px solid var(--panel-border); border-radius: 3px; box-shadow: 0 2px 8px rgba(26, 47, 72, 0.04); }
+    .au-filter { padding: 18px 20px 14px; margin-bottom: 16px; }
+    .au-grid { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 14px 20px; align-items: end; }
+    .au-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .au-field label { color: var(--text-body); font-size: 12px; }
+    .au-field input, .au-field select { width: 100%; height: 34px; border: 1px solid var(--border-input); border-radius: 3px; padding: 0 10px; color: var(--text-body); background: #fff; }
+    .au-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; }
+    .au-btn { height: 34px; padding: 0 18px; border: 1px solid var(--border-input); border-radius: 3px; background: #fff; color: var(--text-body); cursor: pointer; display: inline-flex; align-items: center; }
+    .au-btn-primary { border-color: var(--primary); background: var(--primary); color: #fff; }
+    .au-table-card { overflow: hidden; }
+    .au-table-wrap { overflow-x: auto; }
+    .au-table { width: 100%; min-width: 1080px; border-collapse: collapse; }
+    .au-table th, .au-table td { padding: 11px 13px; border-bottom: 1px solid var(--panel-border); text-align: left; font-size: 13px; vertical-align: top; }
+    .au-table th { background: var(--bg-stripe); color: var(--text-main); font-weight: 700; white-space: nowrap; }
+    .au-table td { color: var(--text-body); }
+    .au-time { white-space: nowrap; color: var(--text-faint); }
+    .au-detail { max-width: 380px; word-break: break-word; }
+    .au-badge { display: inline-flex; padding: 3px 8px; border-radius: 3px; font-size: 12px; white-space: nowrap; background: var(--primary-tint); color: #255bc7; }
+    .au-badge-danger { background: #fdecec; color: var(--danger-ink); }
+    .au-transition { font-family: Consolas, Monaco, monospace; font-size: 12px; color: #3b4659; white-space: nowrap; }
+    .au-empty { padding: 42px 18px !important; text-align: center !important; color: var(--text-faint) !important; }
+    .au-pager { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-top: 1px solid var(--panel-border); flex-wrap: wrap; gap: 10px; }
+    .au-pager .info { color: var(--text-faint); font-size: 13px; }
+    .au-pages { display: flex; gap: 6px; }
+    .au-pages a, .au-pages span { min-width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-input); border-radius: 3px; color: var(--text-body); font-size: 13px; padding: 0 8px; }
+    .au-pages .current { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+    .au-pages .disabled { color: var(--text-faint); background: var(--bg-stripe); }
+    @media (max-width: 1100px) { .au-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); } }
+    @media (max-width: 640px) { .au-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="au-wrap ui-page--fullbleed">
+    <div class="au-title">审计日志</div>
+    <div class="au-sub">记录漏洞录入、状态流转、任务分配等关键操作的完整轨迹，用于数据审计追溯。</div>
+
+    <form class="au-card au-filter" method="get" action="{{ url_for('audit.logs') }}">
+        <div class="au-grid">
+            <div class="au-field">
+                <label>操作人 / 关键字</label>
+                <input name="operator" value="{{ filters.operator }}" placeholder="用户名或日志内容">
+            </div>
+            <div class="au-field">
+                <label>资源类型</label>
+                <select name="resource_type">
+                    <option value="">全部</option>
+                    {% for key in resource_order %}
+                    <option value="{{ key }}" {% if filters.resource_type == key %}selected{% endif %}>{{ resource_labels[key] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="au-field">
+                <label>操作类型</label>
+                <select name="action">
+                    <option value="">全部</option>
+                    {% for key, label in action_labels.items() %}
+                    <option value="{{ key }}" {% if filters.action == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="au-field">
+                <label>开始日期</label>
+                <input type="date" name="date_from" value="{{ filters.date_from }}">
+            </div>
+            <div class="au-field">
+                <label>结束日期</label>
+                <input type="date" name="date_to" value="{{ filters.date_to }}">
+            </div>
+            <div class="au-actions">
+                <a class="au-btn" href="{{ url_for('audit.logs') }}">重置</a>
+                <button class="au-btn au-btn-primary" type="submit">查询</button>
+            </div>
+        </div>
+    </form>
+
+    <div class="au-card au-table-card">
+        <div class="au-table-wrap">
+            <table class="au-table">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>操作人</th>
+                        <th>操作</th>
+                        <th>资源</th>
+                        <th>状态变更</th>
+                        <th>详情</th>
+                        <th>来源 IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td class="au-time">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '—' }}</td>
+                        <td>
+                            {% if log.operator %}
+                                {{ log.operator.username }}
+                                <span style="color:var(--text-faint);font-size:12px;">（{{ log.operator.role }}）</span>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td>
+                            <span class="au-badge {% if log.action == 'view_denied' %}au-badge-danger{% endif %}">{{ action_label(log.action) }}</span>
+                        </td>
+                        <td>{{ resource_label(log.resource_type) }}{% if log.resource_id %} #{{ log.resource_id }}{% endif %}</td>
+                        <td class="au-transition">
+                            {% if log.from_status or log.to_status %}
+                                {{ log.from_status or '—' }} → {{ log.to_status or '—' }}
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="au-detail">{{ log.detail or '—' }}</td>
+                        <td class="au-time">{{ log.ip_address or '—' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td class="au-empty" colspan="7">没有符合条件的审计记录</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if pagination.pages > 1 %}
+        {% set ctx = {} %}
+        {% for key, value in filters.items() %}{% if value %}{% set _ = ctx.update({key: value}) %}{% endif %}{% endfor %}
+        <div class="au-pager">
+            <div class="info">共 {{ pagination.total }} 条，第 {{ pagination.page }} / {{ pagination.pages }} 页</div>
+            <div class="au-pages">
+                {% if pagination.has_prev %}
+                <a href="{{ url_for('audit.logs', page=pagination.prev_num, **ctx) }}">上一页</a>
+                {% else %}<span class="disabled">上一页</span>{% endif %}
+
+                {% for num in pagination.iter_pages(left_edge=1, left_current=2, right_current=2, right_edge=1) %}
+                    {% if num %}
+                        {% if num == pagination.page %}
+                        <span class="current">{{ num }}</span>
+                        {% else %}
+                        <a href="{{ url_for('audit.logs', page=num, **ctx) }}">{{ num }}</a>
+                        {% endif %}
+                    {% else %}
+                    <span class="disabled">…</span>
+                    {% endif %}
+                {% endfor %}
+
+                {% if pagination.has_next %}
+                <a href="{{ url_for('audit.logs', page=pagination.next_num, **ctx) }}">下一页</a>
+                {% else %}<span class="disabled">下一页</span>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

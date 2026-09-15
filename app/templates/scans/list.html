@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}安全扫描{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+    <div>
+        <h1 class="page-title">安全扫描</h1>
+        <div class="ui-hint">当前可见范围：<strong>{{ scope_label }}</strong></div>
+    </div>
+    {% if has_perm(current_user, PERM.SCAN_CREATE) %}
+    <a class="ui-btn-primary" href="{{ url_for('scans.create', scan_type=filters.scan_type or 'sast') }}">＋ 录入扫描记录</a>
+    {% endif %}
+</div>
+
+{# 三个子分类页签 #}
+<div class="filter-card">
+    <div class="filter-tabs" style="margin-bottom:0;border-bottom:0;padding-bottom:0;">
+        <a href="{{ url_for('scans.index') }}" class="{% if not filters.scan_type %}active{% endif %}">全部（{{ type_counts.values() | sum }}）</a>
+        {% for key, label in SCAN_TYPE_LABELS.items() %}
+        <a href="{{ url_for('scans.index', scan_type=key) }}"
+           class="{% if filters.scan_type == key %}active{% endif %}">{{ label }}（{{ type_counts.get(key, 0) }}）</a>
+        {% endfor %}
+    </div>
+</div>
+
+{% if filters.scan_type %}
+<div class="ui-hint" style="margin:-6px 0 14px;">{{ SCAN_TYPE_DESCRIPTIONS.get(filters.scan_type, '') }}</div>
+{% endif %}
+
+<form class="filter-card" method="get" action="{{ url_for('scans.index') }}">
+    {% if filters.scan_type %}<input type="hidden" name="scan_type" value="{{ filters.scan_type }}">{% endif %}
+    <div class="filter-grid" style="grid-template-columns:repeat(4,minmax(160px,1fr));">
+        <div class="form-field">
+            <label>关键字</label>
+            <input type="search" name="keyword" value="{{ filters.keyword }}" placeholder="编号 / 工具 / 扫描对象">
+        </div>
+        <div class="form-field">
+            <label>关联项目</label>
+            <select name="project_id">
+                <option value="">全部项目</option>
+                {% for project in projects %}
+                <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-field">
+            <label>执行状态</label>
+            <select name="status">
+                <option value="">全部状态</option>
+                {% for value, label in SCAN_STATUS_LABELS.items() %}
+                <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-field" style="justify-content:flex-end;">
+            <div class="toolbar-actions" style="justify-content:flex-end;">
+                <a class="ui-btn-secondary" href="{{ url_for('scans.index', scan_type=filters.scan_type or None) }}">重置</a>
+                <button class="ui-btn-primary" type="submit">查询</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="table-card" style="margin-top:18px;">
+    <div style="overflow-x:auto;">
+        <table class="data-table" style="min-width:1080px;">
+            <thead>
+                <tr>
+                    <th style="width:150px;">扫描编号</th>
+                    <th style="width:120px;">类型</th>
+                    <th>扫描对象</th>
+                    <th style="width:130px;">工具</th>
+                    <th style="width:170px;">关联项目</th>
+                    <th style="width:230px;">发现（严/高/中/低）</th>
+                    <th style="width:100px;">状态</th>
+                    <th style="width:110px;">录入人</th>
+                    <th style="width:100px;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for scan in scans %}
+                <tr>
+                    <td><code>{{ scan.scan_code }}</code></td>
+                    <td><span class="ui-badge {{ scan_type_class(scan.scan_type) }}">{{ scan_type_label(scan.scan_type) }}</span></td>
+                    <td class="task-name" style="font-weight:500;">{{ scan.target or '—' }}</td>
+                    <td>{{ scan.tool or '—' }}</td>
+                    <td>
+                        {% if scan.project %}
+                        <a class="table-link" href="{{ url_for('projects.detail', id=scan.project.id, next=url_for('scans.index')) }}">{{ scan.project.name }}</a>
+                        {% else %}未关联{% endif %}
+                    </td>
+                    <td>
+                        {% if scan.total_findings %}
+                        <span class="ui-badge ui-badge--critical">{{ scan.critical_count }}</span>
+                        <span class="ui-badge ui-badge--high">{{ scan.high_count }}</span>
+                        <span class="ui-badge ui-badge--medium">{{ scan.medium_count }}</span>
+                        <span class="ui-badge ui-badge--low">{{ scan.low_count }}</span>
+                        {% else %}
+                        <span class="ui-hint" style="margin:0;">无发现</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="ui-badge {{ scan_status_class(scan.status) }}">{{ scan_status_label(scan.status) }}</span></td>
+                    <td>{{ scan.creator.username if scan.creator else '—' }}</td>
+                    <td><a class="table-link" href="{{ url_for('scans.detail', scan_id=scan.id) }}">查看</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" style="text-align:center;color:var(--text-faint);padding:42px;">
+                    没有符合条件的扫描记录
+                    {% if has_perm(current_user, PERM.SCAN_CREATE) %}
+                    ，可点右上角「录入扫描记录」添加
+                    {% endif %}
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if pagination.pages > 1 %}
+    {% set kept = {} %}
+    {% for key, value in filters.items() %}{% if value %}{% set _ = kept.update({key: value}) %}{% endif %}{% endfor %}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-top:1px solid var(--panel-border);flex-wrap:wrap;">
+        <span class="ui-hint" style="margin:0;">共 {{ pagination.total }} 条，第 {{ pagination.page }} / {{ pagination.pages }} 页</span>
+        <span style="display:inline-flex;gap:8px;">
+            {% if pagination.has_prev %}
+            <a class="ui-btn-secondary ui-btn--sm" href="{{ url_for('scans.index', page=pagination.prev_num, **kept) }}">上一页</a>
+            {% else %}<span class="ui-btn-secondary ui-btn--sm" style="opacity:.45;">上一页</span>{% endif %}
+            {% if pagination.has_next %}
+            <a class="ui-btn-secondary ui-btn--sm" href="{{ url_for('scans.index', page=pagination.next_num, **kept) }}">下一页</a>
+            {% else %}<span class="ui-btn-secondary ui-btn--sm" style="opacity:.45;">下一页</span>{% endif %}
+        </span>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

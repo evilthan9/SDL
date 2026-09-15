@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="ui-form-page" style="max-width:1100px;">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+        <div>
+            <h1 class="page-title">用户权限管理</h1>
+            <div class="ui-hint">给已注册用户分配/调整角色。注册新账号默认是访客，创建后在这里提升角色。</div>
+        </div>
+        <a class="ui-btn-secondary" href="{{ url_for('auth.register') }}">＋ 新增用户</a>
+    </div>
+
+    <form class="filter-card" method="get">
+        <div class="filter-grid" style="grid-template-columns:repeat(3,minmax(160px,1fr));">
+            <div class="form-field">
+                <label>关键字</label>
+                <input type="search" name="keyword" value="{{ filters.keyword }}" placeholder="用户名 / 邮箱">
+            </div>
+            <div class="form-field">
+                <label>角色</label>
+                <select name="role">
+                    <option value="">全部角色</option>
+                    {% for role in roles %}
+                    <option value="{{ role }}" {% if filters.role == role %}selected{% endif %}>{{ role_labels.get(role, role) }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-field" style="justify-content:flex-end;">
+                <div class="toolbar-actions" style="justify-content:flex-end;">
+                    <a class="ui-btn-secondary" href="{{ url_for('auth.users') }}">重置</a>
+                    <button class="ui-btn-primary" type="submit">查询</button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <div class="table-card">
+        <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div style="overflow-x:auto;">
+                <table class="data-table" style="min-width:900px;">
+                    <thead>
+                        <tr>
+                            <th style="width:56px;">ID</th>
+                            <th>用户名</th>
+                            <th>邮箱</th>
+                            <th style="width:110px;">当前角色</th>
+                            <th style="width:170px;">分配角色</th>
+                            <th style="width:130px;">注册时间</th>
+                            <th style="width:90px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.id }}</td>
+                            <td class="task-name">
+                                {{ user.username }}
+                                {% if user.id == current_user.id %}
+                                <span class="ui-badge ui-badge--medium" style="margin-left:6px;">当前账号</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ user.email or '-' }}</td>
+                            <td><span class="ui-badge {% if user.role == 'admin' %}ui-badge--critical{% elif user.role in ['test_lead', 'tester'] %}ui-badge--medium{% elif user.role in ['business', 'developer'] %}ui-badge--ongoing{% else %}ui-badge--low{% endif %}">{{ role_labels.get(user.role, user.role) }}</span></td>
+                            <td>
+                                <select class="form-select form-select-sm" name="role_{{ user.id }}" {% if user.id == current_user.id %}disabled{% endif %}>
+                                    {% for role in roles %}
+                                    <option value="{{ role }}" {% if user.role == role %}selected{% endif %}>{{ role_labels.get(role, role) }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else '-' }}</td>
+                            <td>
+                                {% if user.id == current_user.id %}
+                                <span class="ui-hint" style="margin:0;">—</span>
+                                {% elif user.role == 'admin' and admin_count <= 1 %}
+                                <span class="ui-hint" style="margin:0;">唯一管理员</span>
+                                {% else %}
+                                {# 表单不能嵌套 —— HTML 会丢弃内层 <form> 起始标签。
+                                   这个按钮通过 form 属性关联到表格外的独立表单。 #}
+                                <button type="submit" form="del-user-{{ user.id }}" class="table-link"
+                                        style="border:0;background:transparent;color:var(--danger);cursor:pointer;padding:0;"
+                                        onclick="return confirm('确认删除用户「{{ user.username }}」？\n删除后该用户在漏洞/任务/项目/日志中的关联会被解除。')">删除</button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" style="text-align:center;color:#98a2b3;padding:40px;">没有符合条件的用户</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="padding:14px 18px;border-top:1px solid var(--panel-border);display:flex;justify-content:flex-end;">
+                <button type="submit" class="ui-btn-primary">保存权限</button>
+            </div>
+        </form>
+
+        {# 每行删除用的独立表单,放在角色分配表单之外（见上方注释） #}
+        {% for user in users %}
+        {% if user.id != current_user.id and not (user.role == 'admin' and admin_count <= 1) %}
+        <form id="del-user-{{ user.id }}" method="post" action="{{ url_for('auth.delete_user', user_id=user.id) }}" style="display:none">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        </form>
+        {% endif %}
+        {% endfor %}
+    </div>
+
+    {# 重置密码做成独立卡片而不是塞进表格行:表格已被上方的角色分配表单整个包住,
+       再往里嵌表单就是非法嵌套（正是"点删除实际执行保存权限"那个 bug 的成因）。 #}
+    <div class="filter-card" style="margin-top:18px;">
+        <h3 class="ui-section-title">重置用户密码</h3>
+        <div class="ui-hint" style="margin-bottom:14px;">
+            用于用户忘记密码的情况。重置后请通过安全渠道告知本人，并提醒其尽快自行修改。
+        </div>
+        <form method="post" action="" id="resetPasswordForm"
+              onsubmit="var f=this, s=f.user_id.value; if(!s){alert('请先选择用户');return false;} f.action='/auth/users/'+s+'/reset-password'; return confirm('确认重置该用户的密码？');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="filter-grid" style="grid-template-columns:repeat(3,minmax(160px,1fr));">
+                <div class="form-field">
+                    <label>目标用户</label>
+                    <select name="user_id" required
+                            onchange="document.getElementById('resetPasswordForm').action='/auth/users/'+this.value+'/reset-password';">
+                        <option value="">请选择用户</option>
+                        {% for user in users if user.id != current_user.id %}
+                        <option value="{{ user.id }}">{{ user.username }}（{{ role_labels.get(user.role, user.role) }}）</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label>新密码</label>
+                    <input type="password" name="new_password" minlength="6" required
+                           placeholder="至少 6 位" autocomplete="new-password">
+                </div>
+                <div class="form-field" style="justify-content:flex-end;">
+                    <button type="submit" class="ui-btn-secondary"
+                            style="color:var(--danger);border-color:rgba(241,93,93,.4);">重置密码</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

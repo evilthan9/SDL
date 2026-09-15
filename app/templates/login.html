@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}登录{% endblock %}
+
+{% block content %}
+<div class="ui-form-page ui-form-page--narrow" style="margin-top:6vh;">
+    <div class="filter-card">
+        <h3 class="ui-section-title">用户登录</h3>
+
+        <form method="POST" novalidate>
+            {{ form.hidden_tag() }}
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.username.label.text }}</label>
+                {{ form.username(class="form-control", autocomplete="username", autofocus=true) }}
+                {% for error in form.username.errors %}
+                <div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.password.label.text }}</label>
+                {{ form.password(class="form-control", autocomplete="current-password") }}
+                {% for error in form.password.errors %}
+                <div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="form-check" style="margin-top:14px;">
+                {{ form.remember(class="form-check-input") }}
+                {{ form.remember.label(class="form-check-label") }}
+            </div>
+
+            <div class="ui-form-actions">
+                {{ form.submit(class="ui-btn-primary") }}
+            </div>
+        </form>
+
+        <div class="ui-hint" style="text-align:center;margin-top:14px;">
+            还没有账号？<a href="{{ url_for('auth.register') }}" style="color:var(--primary);">去注册</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

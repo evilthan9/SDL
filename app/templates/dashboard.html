@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}统计看板{% endblock %}
+
+{% block head %}
+<style>
+    .db-page { max-width: 1440px; margin: 0 auto; }
+    .db-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+    .db-head h2 { font-size: 20px; font-weight: 700; margin: 0 0 4px; color: var(--text-main); }
+    .db-scope { color: var(--text-muted); font-size: 13px; }
+    .db-scope b { color: var(--primary); }
+
+    .db-tiles { display: grid; grid-template-columns: repeat(6, minmax(140px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .db-tile { background: #fff; border: 1px solid var(--panel-border); border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 14px rgba(30,41,59,.05); }
+    .db-tile .k { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
+    .db-tile .v { font-size: 24px; font-weight: 700; color: #1d2430; line-height: 1.1; }
+    .db-tile .v small { font-size: 12px; font-weight: 500; color: #98a2b3; margin-left: 3px; }
+    .db-tile .s { color: #98a2b3; font-size: 12px; margin-top: 6px; }
+    .db-tile.danger .v { color: var(--danger-ink); }
+    .db-tile.ok .v { color: var(--success-ink); }
+
+    .db-row { display: grid; gap: 16px; margin-bottom: 16px; }
+    .db-row.cols-2 { grid-template-columns: 1fr 1fr; }
+    .db-row.cols-3 { grid-template-columns: 1.4fr 1fr 1fr; }
+    .db-card { background: #fff; border: 1px solid var(--panel-border); border-radius: 12px; box-shadow: 0 4px 14px rgba(30,41,59,.05); padding: 16px 18px 12px; }
+    .db-card h3 { margin: 0 0 12px; font-size: 14px; font-weight: 700; color: #344054; }
+    .db-chart { width: 100%; height: 260px; }
+    .db-chart.tall { height: 300px; }
+
+    .db-fallback { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .db-fallback th, .db-fallback td { padding: 7px 8px; border-bottom: 1px solid var(--panel-border); text-align: left; }
+    .db-fallback th { color: var(--text-muted); font-weight: 600; }
+    .db-fallback td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .db-table th, .db-table td { padding: 10px 10px; border-bottom: 1px solid var(--panel-border); text-align: left; }
+    .db-table th { color: var(--text-muted); font-weight: 700; background: var(--bg-stripe); }
+    .db-table td { color: #475467; }
+    .db-empty { color: #98a2b3; font-size: 13px; padding: 18px 0; text-align: center; }
+
+    @media (max-width: 1200px) {
+        .db-tiles { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+        .db-row.cols-3 { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 800px) {
+        .db-tiles { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+        .db-row.cols-2, .db-row.cols-3 { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="db-page">
+    <div class="db-head">
+        <div>
+            <h2>漏洞统计看板</h2>
+            <div class="db-scope">当前统计范围：<b>{{ stats.scope_label }}</b>　共 {{ stats.total }} 条漏洞</div>
+        </div>
+        <a class="ui-btn-secondary ui-btn--sm" href="{{ url_for('vulnerabilities.management') if has_perm(current_user, PERM.VULN_VIEW) else url_for('projects.list') }}">查看漏洞列表</a>
+    </div>
+
+    <div class="db-tiles">
+        <div class="db-tile">
+            <div class="k">漏洞总数</div>
+            <div class="v">{{ stats.total }}<small>个</small></div>
+            <div class="s">其中高危及以上 {{ stats.high_total }} 个</div>
+        </div>
+        <div class="db-tile">
+            <div class="k">待修复</div>
+            <div class="v">{{ stats.pending_count }}<small>个</small></div>
+            <div class="s">等待整改</div>
+        </div>
+        <div class="db-tile">
+            <div class="k">待复测</div>
+            <div class="v">{{ stats.fixed_count }}<small>个</small></div>
+            <div class="s">已修复，等待验证</div>
+        </div>
+        <div class="db-tile ok">
+            <div class="k">闭环率</div>
+            <div class="v">{{ stats.closure_rate }}<small>%</small></div>
+            <div class="s">已闭环 {{ stats.resolved_count }} 个</div>
+        </div>
+        <div class="db-tile danger">
+            <div class="k">逾期未修复</div>
+            <div class="v">{{ stats.overdue_count }}<small>个</small></div>
+            <div class="s">已超过 SLA 截止时间</div>
+        </div>
+        <div class="db-tile">
+            <div class="k">平均修复时长</div>
+            <div class="v">{% if stats.mttr_days is not none %}{{ stats.mttr_days }}<small>天</small>{% else %}—{% endif %}</div>
+            <div class="s">{% if stats.mttr_samples %}基于 {{ stats.mttr_samples }} 条已修复记录{% else %}暂无已修复记录{% endif %}</div>
+        </div>
+    </div>
+
+    <div class="db-row cols-3">
+        <div class="db-card">
+            <h3>漏洞趋势（近 12 周）</h3>
+            <div class="db-chart tall" id="chartTrend"></div>
+            <table class="db-fallback" id="fbTrend" hidden>
+                <thead><tr><th>周起始</th><th>新增</th><th>闭环</th></tr></thead>
+                <tbody>
+                    {% for label in stats.trend_labels %}
+                    <tr><td>{{ label }}</td><td>{{ stats.trend_created[loop.index0] }}</td><td>{{ stats.trend_closed[loop.index0] }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="db-card">
+            <h3>严重等级分布</h3>
+            <div class="db-chart tall" id="chartSeverity"></div>
+            <table class="db-fallback" id="fbSeverity" hidden>
+                <thead><tr><th>等级</th><th>数量</th></tr></thead>
+                <tbody>
+                    {% for item in stats.severity_series %}<tr><td>{{ item.name }}</td><td>{{ item.value }}</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="db-card">
+            <h3>状态分布</h3>
+            <div class="db-chart tall" id="chartStatus"></div>
+            <table class="db-fallback" id="fbStatus" hidden>
+                <thead><tr><th>状态</th><th>数量</th></tr></thead>
+                <tbody>
+                    {% for item in stats.status_series %}<tr><td>{{ item.name }}</td><td>{{ item.value }}</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="db-row cols-2">
+        <div class="db-card">
+            <h3>漏洞类型 Top</h3>
+            <div class="db-chart" id="chartType"></div>
+            <table class="db-fallback" id="fbType" hidden>
+                <thead><tr><th>类型</th><th>数量</th></tr></thead>
+                <tbody>
+                    {% for item in stats.type_series %}<tr><td>{{ item.name }}</td><td>{{ item.value }}</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="db-card">
+            <h3>项目分布 Top</h3>
+            <div class="db-chart" id="chartProject"></div>
+            <table class="db-fallback" id="fbProject" hidden>
+                <thead><tr><th>项目</th><th>数量</th></tr></thead>
+                <tbody>
+                    {% for item in stats.project_series %}<tr><td>{{ item.name }}</td><td>{{ item.value }}</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="db-row cols-2">
+        <div class="db-card">
+            <h3>逾期未修复（Top 10）</h3>
+            {% if stats.overdue_list %}
+            <table class="db-table">
+                <thead><tr><th>漏洞</th><th>等级</th><th>状态</th><th>SLA 截止</th></tr></thead>
+                <tbody>
+                    {% for vuln in stats.overdue_list %}
+                    <tr>
+                        <td><a href="{{ url_for('vulnerabilities.detail', id=vuln.id) }}">{{ vuln.title }}</a></td>
+                        <td>{{ vuln.severity or '-' }}</td>
+                        <td><span class="ui-badge {{ STATUS_BADGE_CLASSES.get(vuln.status, 'ui-badge--pending') }}">{{ status_label(vuln.status) }}</span></td>
+                        <td style="color:var(--danger-ink);">{{ vuln.due_date.strftime('%Y-%m-%d') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="db-empty">没有逾期未修复的漏洞</div>
+            {% endif %}
+        </div>
+
+        <div class="db-card">
+            <h3>最近发现</h3>
+            {% if stats.recent_vulns %}
+            <table class="db-table">
+                <thead><tr><th>漏洞</th><th>等级</th><th>状态</th><th>发现时间</th></tr></thead>
+                <tbody>
+                    {% for vuln in stats.recent_vulns %}
+                    <tr>
+                        <td><a href="{{ url_for('vulnerabilities.detail', id=vuln.id) }}">{{ vuln.title }}</a></td>
+                        <td>{{ vuln.severity or '-' }}</td>
+                        <td><span class="ui-badge {{ STATUS_BADGE_CLASSES.get(vuln.status, 'ui-badge--pending') }}">{{ status_label(vuln.status) }}</span></td>
+                        <td>{{ vuln.created_at.strftime('%Y-%m-%d') if vuln.created_at else '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="db-empty">暂无漏洞记录</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+(function () {
+    // 断网/被墙时 CDN 加载不到,此时把图表换成静态表格,
+    // 而不是留一片空白 —— 空白的看板比纯 CSS 柱状图还糟。
+    var ECHARTS_OK = (typeof echarts !== 'undefined');
+
+    function showFallback(id) {
+        var canvas = document.getElementById(id);
+        var table = document.getElementById('fb' + id.slice(5));
+        if (canvas) canvas.style.display = 'none';
+        if (table) table.hidden = false;
+    }
+
+    if (!ECHARTS_OK) {
+        ['chartTrend', 'chartSeverity', 'chartStatus', 'chartType', 'chartProject'].forEach(showFallback);
+        var tip = document.createElement('div');
+        tip.className = 'alert alert-warning mt-3';
+        tip.textContent = '图表库未能加载（网络不可用），已切换为表格展示。';
+        document.querySelector('.db-page').appendChild(tip);
+        return;
+    }
+
+    var SEVERITY = {{ stats.severity_series|tojson }};
+    var STATUS = {{ stats.status_series|tojson }};
+    var TYPE = {{ stats.type_series|tojson }};
+    var PROJECT = {{ stats.project_series|tojson }};
+    var TREND_LABELS = {{ stats.trend_labels|tojson }};
+    var TREND_CREATED = {{ stats.trend_created|tojson }};
+    var TREND_CLOSED = {{ stats.trend_closed|tojson }};
+
+    var PALETTE = ['#f15d5d', '#f5b14d', 'var(--primary)', '#2dbd74', '#8b5cf6', '#2aa2d7', '#f472b6', '#94a3b8'];
+    var AXIS_STYLE = {
+        axisLine: { lineStyle: { color: 'var(--panel-border)' } },
+        axisLabel: { color: 'var(--text-muted)', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#f0f3f8' } }
+    };
+
+    function init(id, option) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var chart = echarts.init(el);
+        chart.setOption(option);
+        window.addEventListener('resize', function () { chart.resize(); });
+    }
+
+    init('chartTrend', {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['新增', '闭环'], right: 0, textStyle: { color: 'var(--text-muted)', fontSize: 12 } },
+        grid: { left: 40, right: 16, top: 40, bottom: 28 },
+        xAxis: Object.assign({ type: 'category', data: TREND_LABELS }, AXIS_STYLE),
+        yAxis: Object.assign({ type: 'value', minInterval: 1 }, AXIS_STYLE),
+        series: [
+            { name: '新增', type: 'line', smooth: true, data: TREND_CREATED,
+              itemStyle: { color: 'var(--primary)' }, areaStyle: { opacity: 0.12 } },
+            { name: '闭环', type: 'line', smooth: true, data: TREND_CLOSED,
+              itemStyle: { color: '#2dbd74' }, areaStyle: { opacity: 0.12 } }
+        ]
+    });
+
+    init('chartSeverity', {
+        tooltip: { trigger: 'item' },
+        color: PALETTE,
+        series: [{
+            type: 'pie', radius: ['45%', '70%'], center: ['50%', '52%'],
+            label: { formatter: '{b}\n{c}', color: 'var(--text-muted)', fontSize: 11 },
+            data: SEVERITY
+        }]
+    });
+
+    init('chartStatus', {
+        tooltip: { trigger: 'item' },
+        color: PALETTE,
+        series: [{
+            type: 'pie', radius: ['45%', '70%'], center: ['50%', '52%'],
+            label: { formatter: '{b}\n{c}', color: 'var(--text-muted)', fontSize: 11 },
+            data: STATUS
+        }]
+    });
+
+    init('chartType', {
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: 100, right: 24, top: 16, bottom: 20 },
+        xAxis: Object.assign({ type: 'value', minInterval: 1 }, AXIS_STYLE),
+        yAxis: Object.assign({
+            type: 'category',
+            data: TYPE.map(function (item) { return item.name; }).reverse()
+        }, AXIS_STYLE),
+        series: [{
+            type: 'bar', barMaxWidth: 18,
+            itemStyle: { color: 'var(--primary)', borderRadius: [0, 4, 4, 0] },
+            data: TYPE.map(function (item) { return item.value; }).reverse()
+        }]
+    });
+
+    init('chartProject', {
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: 100, right: 24, top: 16, bottom: 20 },
+        xAxis: Object.assign({ type: 'value', minInterval: 1 }, AXIS_STYLE),
+        yAxis: Object.assign({
+            type: 'category',
+            data: PROJECT.map(function (item) { return item.name; }).reverse()
+        }, AXIS_STYLE),
+        series: [{
+            type: 'bar', barMaxWidth: 18,
+            itemStyle: { color: '#2dbd74', borderRadius: [0, 4, 4, 0] },
+            data: PROJECT.map(function (item) { return item.value; }).reverse()
+        }]
+    });
+})();
+</script>
+{% endblock %}

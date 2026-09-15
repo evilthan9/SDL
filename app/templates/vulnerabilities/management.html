@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+
+{% block title %}漏洞管理{% endblock %}
+
+{% block content %}
+<style>
+    .vuln-management { background: var(--bg-soft); padding: 0 22px 30px; color: var(--text-main); }
+    .vuln-page-title { padding: 16px 0 10px; font-size: 20px; font-weight: 700; }
+    .mg-tabs { display: flex; gap: 2px; border-bottom: 1px solid #e2e7ee; margin-bottom: 12px; }
+    .mg-tab { padding: 8px 18px 10px; color: var(--text-body); text-decoration: none; font-size: 14px; border-bottom: 2px solid transparent; }
+    .mg-tab.mg-active { color: var(--primary); font-weight: 600; border-bottom-color: var(--primary); }
+    .vuln-filter-card, .vuln-table-card { background: #fff; border: 1px solid var(--panel-border); border-radius: 3px; box-shadow: 0 2px 8px rgba(26, 47, 72, 0.04); }
+    .vuln-filter-card { padding: 22px 24px 18px; }
+    .vuln-filter-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 24px; align-items: end; }
+    .vuln-filter-field { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .vuln-filter-field label { flex: 0 0 auto; color: var(--text-body); font-size: 13px; white-space: nowrap; }
+    .vuln-filter-field input, .vuln-filter-field select { width: 100%; height: 34px; border: 1px solid var(--border-input); border-radius: 3px; padding: 0 10px; color: var(--text-body); background: #fff; min-width: 0; }
+    .vuln-filter-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+    .vuln-check { display: inline-flex; align-items: center; gap: 6px; color: var(--text-body); font-size: 13px; height: 34px; }
+    .vuln-btn { height: 34px; padding: 0 18px; border: 1px solid var(--border-input); border-radius: 3px; background: #fff; color: var(--text-body); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+    .vuln-btn-primary { border-color: var(--primary); background: var(--primary); color: #fff; }
+    .vuln-table-card { margin-top: 18px; overflow: hidden; }
+    .vuln-table-wrap { overflow-x: auto; max-height: 600px; }
+    .vuln-table { width: 100%; min-width: 1240px; border-collapse: collapse; }
+    .vuln-table th, .vuln-table td { padding: 13px 14px; border-bottom: 1px solid var(--panel-border); text-align: left; white-space: nowrap; font-size: 13px; }
+    .vuln-table th { background: var(--bg-stripe); color: var(--text-main); font-weight: 700; position: sticky; top: 0; z-index: 1; }
+    .vuln-table td { color: var(--text-body); }
+    .vuln-name { color: var(--text-main); font-weight: 600; }
+    .vuln-code { color: var(--text-faint); font-size: 12px; display: block; margin-top: 2px; }
+    .vuln-badge { display: inline-flex; padding: 4px 9px; border-radius: 3px; font-size: 12px; }
+    .vuln-pending { background: var(--pending-tint); color: var(--warning-ink); }
+    .vuln-overdue { color: var(--danger-ink); font-weight: 600; }
+    .vuln-action { color: var(--primary); text-decoration: none; margin-right: 10px; }
+    .vuln-empty { padding: 42px 18px !important; text-align: center !important; color: var(--text-faint) !important; }
+    .vuln-pager { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-top: 1px solid var(--panel-border); flex-wrap: wrap; gap: 10px; }
+    .vuln-pager .info { color: var(--text-faint); font-size: 13px; }
+    .vuln-pages { display: flex; gap: 6px; align-items: center; }
+    .vuln-pages a, .vuln-pages span { min-width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-input); border-radius: 3px; color: var(--text-body); font-size: 13px; padding: 0 8px; text-decoration: none; }
+    .vuln-pages .current { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+    .vuln-pages .disabled { color: var(--text-faint); background: var(--bg-stripe); }
+    @media (max-width: 1100px) { .vuln-filter-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 640px) { .vuln-filter-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="vuln-management ui-page--fullbleed">
+    {% set can_delete = has_perm(current_user, PERM.VULN_DELETE) %}
+    {% set can_batch = can_delete and not trash %}
+    {% set ctx = {
+        'task_id': current_task.id if current_task else None,
+        'project_id': current_project.id if current_project else None,
+        'case_id': current_test_case.id if current_test_case else None
+    } %}
+    {# 分页/导出链接要带上全部有效筛选条件,否则一翻页筛选就丢 #}
+    {% set kept = {} %}
+    {% for key, value in filters.items() %}{% if value %}{% set _ = kept.update({key: value}) %}{% endif %}{% endfor %}
+    {% set merged = dict(kept, **ctx) %}
+    {% if trash %}{% set _ = merged.update({'trash': 1}) %}{% endif %}
+
+    <div class="vuln-page-title">{{ '漏洞回收站' if trash else '漏洞管理' }}{% if current_test_case %} - No.{{ current_test_case.case_number }} {{ current_test_case.name }}{% elif current_task %} - {{ current_task.name }}{% endif %}</div>
+    <div class="mg-tabs">
+        <a class="mg-tab {% if not trash %}mg-active{% endif %}" href="{{ url_for('vulnerabilities.management', **ctx) }}">漏洞列表</a>
+        <a class="mg-tab {% if trash %}mg-active{% endif %}" href="{{ url_for('vulnerabilities.management', trash=1, **ctx) }}">回收站</a>
+    </div>
+    {% if not trash %}
+    <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+        {% if current_test_case %}
+        <a class="vuln-btn vuln-btn-primary" href="{{ url_for('vulnerabilities.publish_from_case', task_id=current_test_case.task_id, case_id=current_test_case.id) }}">＋ 新增漏洞</a>
+        {% else %}
+        <a class="vuln-btn vuln-btn-primary" href="{{ url_for('vulnerabilities.create', task_id=current_task.id if current_task else None, project_id=current_project.id if current_project else None) }}">＋ 新增漏洞</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <form class="vuln-filter-card" method="get" action="{{ url_for('vulnerabilities.management') }}">
+        {% if current_task %}<input type="hidden" name="task_id" value="{{ current_task.id }}">{% endif %}
+        {% if current_project %}<input type="hidden" name="project_id" value="{{ current_project.id }}">{% endif %}
+        {% if current_test_case %}<input type="hidden" name="case_id" value="{{ current_test_case.id }}">{% endif %}
+        {% if trash %}<input type="hidden" name="trash" value="1">{% endif %}
+        <div class="vuln-filter-grid">
+            <div class="vuln-filter-field">
+                <label>漏洞名称</label>
+                <input name="title" value="{{ filters.title }}" placeholder="标题或编号">
+            </div>
+            <div class="vuln-filter-field">
+                <label>漏洞状态</label>
+                <select name="status">
+                    <option value="">全部</option>
+                    {% for value, label in STATUS_LABELS.items() %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="vuln-filter-field">
+                <label>风险等级</label>
+                <select name="severity">
+                    <option value="">全部</option>
+                    {% for value, label in severity_choices %}
+                    <option value="{{ value }}" {% if filters.severity == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="vuln-filter-field">
+                <label>漏洞类型</label>
+                <select name="vuln_type">
+                    <option value="">全部</option>
+                    {% for value, label in vuln_type_choices %}
+                    <option value="{{ value }}" {% if filters.vuln_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="vuln-filter-field">
+                <label>漏洞来源</label>
+                <select name="source">
+                    <option value="">全部</option>
+                    {% for value, label in source_choices %}
+                    <option value="{{ value }}" {% if filters.source == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="vuln-filter-field">
+                <label>责任人</label>
+                <select name="assignee_id">
+                    <option value="">全部</option>
+                    {% for user in assignees %}
+                    <option value="{{ user.id }}" {% if filters.assignee_id == user.id %}selected{% endif %}>{{ user.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="vuln-filter-field">
+                <label>发现时间从</label>
+                <input type="date" name="date_from" value="{{ filters.date_from }}">
+            </div>
+            <div class="vuln-filter-field">
+                <label>至</label>
+                <input type="date" name="date_to" value="{{ filters.date_to }}">
+            </div>
+            <div class="vuln-check">
+                <input type="checkbox" id="overdue" name="overdue" value="1" {% if filters.overdue %}checked{% endif %}>
+                <label for="overdue" style="margin:0;">仅看逾期未修复</label>
+            </div>
+            <div class="vuln-filter-actions">
+                <a class="vuln-btn" href="{{ url_for('vulnerabilities.management', **ctx) }}{{ '?trash=1' if trash else '' }}">重置</a>
+                {% if can_export %}
+                <a class="vuln-btn" href="{{ url_for('vulnerabilities.management', export=1, **merged) }}">导出 CSV</a>
+                {% endif %}
+                {% if can_batch %}<button type="button" class="vuln-btn" style="color:var(--danger-ink);" onclick="submitBatchDelete()">🗑 删除所选</button>{% endif %}
+                <button class="vuln-btn vuln-btn-primary" type="submit">查询</button>
+            </div>
+        </div>
+    </form>
+
+    {% if can_batch %}
+    <!-- 批量删除用的隐藏表单:按钮放在筛选卡内,由 JS 收集勾选项后提交 -->
+    <form id="batchDeleteForm" method="post" action="{{ url_for('vulnerabilities.batch_delete') }}" style="display:none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if current_task %}<input type="hidden" name="task_id" value="{{ current_task.id }}">{% endif %}
+        {% if current_project %}<input type="hidden" name="project_id" value="{{ current_project.id }}">{% endif %}
+        {% if current_test_case %}<input type="hidden" name="case_id" value="{{ current_test_case.id }}">{% endif %}
+    </form>
+    {% endif %}
+
+    <div class="vuln-table-card">
+        <div class="vuln-table-wrap">
+            <table class="vuln-table">
+                <thead><tr>
+                    {% if can_batch %}<th style="width:42px; text-align:center;"><input type="checkbox" id="checkAll" onclick="toggleAll(this)"></th>{% endif %}
+                    <th>漏洞名称</th><th>漏洞类型</th><th>风险等级</th><th>漏洞状态</th><th>责任人</th><th>计划修复时间</th><th>发现时间</th><th>关闭时间</th><th>任务名称</th><th>关联项目</th><th>操作</th>
+                </tr></thead>
+                <tbody>
+                    {% for vulnerability in vulnerabilities %}
+                    {% set overdue = vulnerability.due_date and vulnerability.due_date < now
+                                      and vulnerability.status in open_statuses %}
+                    <tr>
+                        {% if can_batch %}<td style="text-align:center;"><input type="checkbox" class="row-check" value="{{ vulnerability.id }}"></td>{% endif %}
+                        <td class="vuln-name">
+                            {{ vulnerability.title }}
+                            <span class="vuln-code">{{ vulnerability.vuln_code }}</span>
+                        </td>
+                        <td>{{ vuln_type_labels.get(vulnerability.vuln_type, vulnerability.vuln_type or '未分类') }}</td>
+                        <td>{{ vulnerability.risk_score or '-' }} / {{ vulnerability.severity or '-' }}</td>
+                        <td><span class="vuln-badge {{ STATUS_BADGE_CLASSES.get(vulnerability.status, 'ui-badge--pending') }}">{{ status_label(vulnerability.status) }}</span></td>
+                        <td>{{ vulnerability.assignee.username if vulnerability.assignee else '未分配' }}</td>
+                        <td class="{% if overdue %}vuln-overdue{% endif %}">
+                            {{ vulnerability.due_date.strftime('%Y-%m-%d') if vulnerability.due_date else '-' }}
+                            {% if overdue %}<span title="已超过 SLA 截止时间">⚠</span>{% endif %}
+                        </td>
+                        <td>{{ vulnerability.created_at.strftime('%Y-%m-%d %H:%M') if vulnerability.created_at else '-' }}</td>
+                        <td>{{ vulnerability.closed_at.strftime('%Y-%m-%d %H:%M') if vulnerability.closed_at else '-' }}</td>
+                        <td>{{ vulnerability.task.name if vulnerability.task else '-' }}</td>
+                        <td>{{ vulnerability.project.name if vulnerability.project else '-' }}</td>
+                        <td>
+                            <a class="vuln-action" href="{{ url_for('vulnerabilities.detail', id=vulnerability.id) }}">预览</a>
+                            {% if has_perm(current_user, PERM.VULN_EDIT) %}
+                            <a class="vuln-action" href="{{ url_for('vulnerabilities.edit', id=vulnerability.id) }}">编辑</a>
+                            {% endif %}
+                            {% if can_delete and not trash %}
+                            <form method="post" action="{{ url_for('vulnerabilities.delete', id=vulnerability.id) }}" style="display:inline" onsubmit="return confirm('确认删除该漏洞？删除后将进入回收站。')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="task_id" value="{{ current_task.id if current_task else '' }}">
+                                <input type="hidden" name="project_id" value="{{ current_project.id if current_project else '' }}">
+                                <input type="hidden" name="case_id" value="{{ current_test_case.id if current_test_case else '' }}">
+                                <button type="submit" class="vuln-action" style="border:0;background:transparent;cursor:pointer;color:var(--danger-ink);margin:0;padding:0;">删除</button>
+                            </form>
+                            {% elif can_delete and trash %}
+                            <form method="post" action="{{ url_for('vulnerabilities.restore', id=vulnerability.id) }}" style="display:inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="task_id" value="{{ current_task.id if current_task else '' }}">
+                                <input type="hidden" name="project_id" value="{{ current_project.id if current_project else '' }}">
+                                <input type="hidden" name="case_id" value="{{ current_test_case.id if current_test_case else '' }}">
+                                <button type="submit" class="vuln-action" style="border:0;background:transparent;cursor:pointer;color:var(--success-ink);margin:0;padding:0;">恢复</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}<tr><td class="vuln-empty" colspan="{{ 12 if can_batch else 11 }}">{{ '回收站暂无漏洞记录' if trash else '没有符合条件的漏洞' }}</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if pagination.pages > 1 %}
+        <div class="vuln-pager">
+            <div class="info">共 {{ pagination.total }} 条，第 {{ pagination.page }} / {{ pagination.pages }} 页</div>
+            <div class="vuln-pages">
+                {% if pagination.has_prev %}
+                <a href="{{ url_for('vulnerabilities.management', page=pagination.prev_num, **merged) }}">上一页</a>
+                {% else %}<span class="disabled">上一页</span>{% endif %}
+
+                {% for num in pagination.iter_pages(left_edge=1, left_current=2, right_current=2, right_edge=1) %}
+                    {% if num %}
+                        {% if num == pagination.page %}<span class="current">{{ num }}</span>
+                        {% else %}<a href="{{ url_for('vulnerabilities.management', page=num, **merged) }}">{{ num }}</a>{% endif %}
+                    {% else %}<span class="disabled">…</span>{% endif %}
+                {% endfor %}
+
+                {% if pagination.has_next %}
+                <a href="{{ url_for('vulnerabilities.management', page=pagination.next_num, **merged) }}">下一页</a>
+                {% else %}<span class="disabled">下一页</span>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% if can_delete %}
+<script>
+    function toggleAll(cb) {
+        document.querySelectorAll('.row-check').forEach(function (c) { c.checked = cb.checked; });
+        updateSel();
+    }
+    function updateSel() {
+        var n = document.querySelectorAll('.row-check:checked').length;
+        var el = document.getElementById('selCount');
+        // 原实现读的是不存在的 id="selCount"，所以已选条数从来没显示出来过
+        if (el) el.textContent = n ? '（' + n + '）' : '';
+    }
+    document.addEventListener('change', function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains('row-check')) updateSel();
+    });
+    function submitBatchDelete() {
+        var checked = document.querySelectorAll('.row-check:checked');
+        if (!checked.length) { alert('请先勾选要删除的漏洞'); return; }
+        if (!confirm('确认删除所选 ' + checked.length + ' 条漏洞？删除后将进入回收站。')) return;
+        var form = document.getElementById('batchDeleteForm');
+        form.querySelectorAll('input[name="vuln_ids"]').forEach(function (e) { e.remove(); });
+        checked.forEach(function (cb) {
+            var inp = document.createElement('input');
+            inp.type = 'hidden';
+            inp.name = 'vuln_ids';
+            inp.value = cb.value;
+            form.appendChild(inp);
+        });
+        form.submit();
+    }
+</script>
+{% endif %}
+{% endblock %}

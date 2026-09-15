@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="ui-form-page">
+    <div class="page-header">
+        <h1 class="page-title">安全合规评估问卷</h1>
+        <div class="ui-hint">定级备案阶段使用。问卷结果会写入项目描述，并决定是否需要安全测试。</div>
+    </div>
+
+    <form class="filter-card" method="post" novalidate>
+        {{ form.hidden_tag() }}
+
+        <h3 class="ui-section-title">评估内容</h3>
+        <div class="ui-form-grid">
+            <div class="form-field">
+                <label class="ui-required">{{ form.project_id.label.text }}</label>
+                {{ form.project_id(class="form-select") }}
+                {% for error in form.project_id.errors %}<div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.importance.label.text }}</label>
+                {{ form.importance(class="form-select") }}
+            </div>
+        </div>
+
+        <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px;">
+            <div class="form-check">
+                {{ form.is_new_system(class="form-check-input") }}
+                {{ form.is_new_system.label(class="form-check-label") }}
+            </div>
+            <div class="form-check">
+                {{ form.requires_test(class="form-check-input") }}
+                {{ form.requires_test.label(class="form-check-label") }}
+            </div>
+        </div>
+
+        <div class="ui-form-actions">
+            <a class="ui-btn-secondary" href="{{ url_for('main.business', stage='level') }}">取消</a>
+            {{ form.submit(class="ui-btn-primary") }}
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<style>
+    .pv-page { max-width: 1440px; margin: 0 auto; }
+    .pv-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0 14px; }
+    .pv-title { font-size: 20px; font-weight: 700; color: var(--text-main); margin: 0; }
+    .pv-sub { color: var(--text-muted); font-size: 13px; }
+    .pv-btn { display: inline-flex; align-items: center; height: 34px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--border-input); background: #fff; color: var(--text-main); font-size: 13px; font-weight: 600; text-decoration: none; }
+    .pv-card { background: #fff; border: 1px solid var(--panel-border); border-radius: 12px; box-shadow: 0 4px 14px rgba(30, 41, 59, 0.05); overflow: hidden; }
+    .pv-table-wrap { overflow-x: auto; }
+    .pv-table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 13px; }
+    .pv-table th, .pv-table td { padding: 12px 14px; border-bottom: 1px solid var(--panel-border); text-align: left; white-space: nowrap; }
+    .pv-table th { background: #f4f7fb; color: var(--text-main); font-weight: 700; }
+    .pv-table td { color: var(--text-body); }
+    .pv-name { color: var(--text-main); font-weight: 600; }
+    .pv-empty { padding: 46px 16px !important; text-align: center !important; color: var(--text-faint) !important; }
+    .pv-link { color: var(--primary); font-weight: 600; text-decoration: none; }
+</style>
+
+<div class="pv-page">
+    <div class="pv-head">
+        <div>
+            <div class="pv-title">项目漏洞列表</div>
+            <div class="pv-sub">项目：{{ project.name }}（{{ project.department or '未设置' }}）· 共 {{ vulnerabilities|length }} 条</div>
+        </div>
+        <a class="pv-btn" href="{{ back_url }}">← 返回</a>
+    </div>
+
+    <div class="pv-card">
+        <div class="pv-table-wrap">
+            <table class="pv-table">
+                <thead>
+                    <tr>
+                        <th>编号</th>
+                        <th>漏洞名称</th>
+                        <th>来源</th>
+                        <th>严重等级</th>
+                        <th>风险评分</th>
+                        <th>状态</th>
+                        <th>关联任务</th>
+                        <th>责任人</th>
+                        <th>发现时间</th>
+                        {% if can_open_detail %}<th>操作</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vulnerability in vulnerabilities %}
+                    <tr>
+                        <td><code>{{ vulnerability.vuln_code or '-' }}</code></td>
+                        <td class="pv-name">{{ vulnerability.title }}</td>
+                        <td>{{ source_label(vulnerability.source) }}</td>
+                        <td><span class="ui-badge {{ severity_class(vulnerability.severity) }}">{{ severity_label(vulnerability.severity) }}</span></td>
+                        <td>{{ vulnerability.risk_score or '-' }}</td>
+                        <td><span class="ui-badge {{ STATUS_BADGE_CLASSES.get(vulnerability.status, 'ui-badge--low') }}">{{ status_label(vulnerability.status) }}</span></td>
+                        <td>{{ vulnerability.task.name if vulnerability.task else '-' }}</td>
+                        <td>{{ vulnerability.assignee.username if vulnerability.assignee else '未分配' }}</td>
+                        <td>{{ vulnerability.created_at.strftime('%Y-%m-%d %H:%M') if vulnerability.created_at else '-' }}</td>
+                        {% if can_open_detail %}
+                        <td>
+                            {# 与详情页的可见性同源,避免列表里有链接、点进去 403 #}
+                            {% if can_view_vulnerability(vulnerability, current_user) %}
+                            <a class="pv-link" href="{{ url_for('vulnerabilities.detail', id=vulnerability.id) }}">查看</a>
+                            {% else %}<span style="color:var(--text-faint);">—</span>{% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td class="pv-empty" colspan="{% if can_open_detail %}10{% else %}9{% endif %}">该项目暂无漏洞记录</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

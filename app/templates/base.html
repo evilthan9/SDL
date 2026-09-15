@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDL 安全管理平台 - {% block title %}{% endblock %}</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="topbar">
+        <div class="topbar-inner">
+            {# 导航按权限渲染,不再每个角色写一段 if-else。
+               原先是三段按角色硬编码的列表,加一个页面要在三个分支里各改一次,
+               而且已经漂移过（测试角色看得到业务端、业务角色看不到扫描）。 #}
+            {% set nav_items = [
+                ('统计看板', 'main.index', has_perm(current_user, PERM.DASHBOARD_VIEW), 'main.index'),
+                ('漏洞管理', 'vulnerabilities.management', has_perm(current_user, PERM.VULN_MANAGE), 'vulnerabilities.management'),
+                ('安全扫描', 'scans.index', has_perm(current_user, PERM.SCAN_VIEW), 'scans.'),
+                ('业务端', 'main.business', can_access_business(current_user), 'main.business'),
+                ('测试端', 'projects.list', can_access_testing(current_user), 'projects.'),
+            ] %}
+            <div class="topbar-nav">
+                {% if current_user.is_authenticated %}
+                    {% for label, endpoint, visible, active_prefix in nav_items %}
+                        {% if visible %}
+                        <a href="{{ url_for(endpoint) }}"
+                           class="{% if request.endpoint and request.endpoint.startswith(active_prefix) %}active{% endif %}">{{ label }}</a>
+                        {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}">登录</a>
+                    <a href="{{ url_for('auth.register') }}">注册</a>
+                {% endif %}
+            </div>
+            {% if current_user.is_authenticated %}
+            {# 设置类入口收进右上角下拉,不再和主导航抢位置 #}
+            <div class="topbar-user dropdown">
+                <span class="user-pill">{{ current_user.username[0]|upper if current_user.username else 'U' }}</span>
+                <a href="#" class="topbar-link dropdown-toggle" role="button"
+                   data-bs-toggle="dropdown" aria-expanded="false">
+                    {{ current_user.username }}
+                    <span class="topbar-role">{{ role_label(current_user.role) }}</span>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}">个人资料</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('auth.change_password') }}">修改密码</a></li>
+                    {% if has_perm(current_user, PERM.AUDIT_VIEW) %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="{{ url_for('audit.logs') }}">审计日志</a></li>
+                    {% endif %}
+                    {% if has_perm(current_user, PERM.USER_MANAGE) %}
+                    <li><a class="dropdown-item" href="{{ url_for('auth.users') }}">用户权限</a></li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">退出登录</a></li>
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div class="page-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

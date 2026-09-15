@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}漏洞详情{% endblock %}
+
+{% block content %}
+<style>
+    .dv-page { max-width: 1440px; margin: 0 auto; }
+    .dv-top { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin: 4px 0 14px; flex-wrap: wrap; }
+    .dv-top h2 { font-size: 20px; font-weight: 700; margin: 0; color: var(--text-main); }
+    .dv-back { display: inline-flex; align-items: center; height: 34px; padding: 0 16px; border: 1px solid var(--border-input); background: #fff; color: var(--text-body); font-size: 13px; font-weight: 600; border-radius: 8px; text-decoration: none; }
+    .dv-grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 18px; align-items: start; }
+    .dv-panel { background: #fff; border: 1px solid var(--panel-border); border-radius: 12px; box-shadow: 0 4px 14px rgba(30, 41, 59, .05); padding: 18px 20px; }
+    .dv-panel h3 { margin: 0 0 14px; font-size: 15px; color: var(--text-main); padding-bottom: 10px; border-bottom: 1px solid var(--panel-border); }
+    .dv-info dt { color: var(--text-faint); font-size: 12px; font-weight: 600; margin-top: 12px; }
+    .dv-info dt:first-child { margin-top: 0; }
+    .dv-info dd { margin: 4px 0 0; color: #25364d; font-size: 14px; }
+    .dv-badge { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .dv-desc { word-break: break-word; color: var(--text-body); font-size: 14px; line-height: 1.8; margin: 0; }
+    .dv-desc img { max-width: 100%; height: auto; margin: 6px 0; border-radius: 8px; border: 1px solid #e8edf4; }
+    .dv-desc a { color: var(--primary); }
+    .dv-note { color: var(--text-faint); font-size: 13px; }
+    .dv-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    @media (max-width: 900px) { .dv-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="dv-page">
+    <div class="dv-top">
+        <div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <h2><code>{{ vuln.vuln_code }}</code> · {{ vuln.title }}</h2>
+                {# 原先这里是 `class="dv-badge {% if %}" style="..."` —— 引号提前闭合了
+                   class 属性，靠 Jinja 拼接侥幸渲染正确，任何格式化都会破坏它。 #}
+                <span class="ui-badge {{ severity_class(vuln.severity) }}">{{ severity_label(vuln.severity) }}</span>
+                <span class="ui-badge {{ STATUS_BADGE_CLASSES.get(vuln.status, 'ui-badge--low') }}">{{ status_label(vuln.status) }}</span>
+            </div>
+        </div>
+        <a class="dv-back" href="{{ back_url }}">← 返回</a>
+    </div>
+
+    <div class="dv-grid">
+        <div class="dv-panel">
+            <h3>漏洞信息</h3>
+            <dl class="dv-info">
+                <dt>漏洞类型</dt>
+                <dd>{{ vuln_type_label(vuln.vuln_type) }}</dd>
+                <dt>漏洞来源</dt>
+                <dd>{{ source_label(vuln.source) }}</dd>
+                <dt>所属项目</dt>
+                <dd>{{ vuln.project.name if vuln.project else '未关联' }}</dd>
+                <dt>关联任务</dt>
+                <dd>{{ vuln.task.name if vuln.task else '未关联' }}</dd>
+                <dt>来源测试用例</dt>
+                <dd>{% if vuln.test_case %}No.{{ vuln.test_case.case_number }} {{ vuln.test_case.name }}{% else %}—{% endif %}</dd>
+                <dt>责任人</dt>
+                <dd>{{ vuln.assignee.username if vuln.assignee else '未分配' }}</dd>
+                <dt>风险评分 / SLA 截止</dt>
+                <dd>{{ vuln.risk_score or '-' }}　{{ vuln.due_date.strftime('%Y-%m-%d') if vuln.due_date else '未设置' }}</dd>
+                <dt>创建人 / 时间</dt>
+                <dd>{{ vuln.creator.username if vuln.creator else '-' }}　{{ vuln.created_at.strftime('%Y-%m-%d %H:%M') if vuln.created_at else '-' }}</dd>
+                {% if vuln.fixed_at %}<dt>修复时间</dt><dd>{{ vuln.fixed_at.strftime('%Y-%m-%d %H:%M') }}</dd>{% endif %}
+                {% if vuln.closed_at %}<dt>关闭时间</dt><dd>{{ vuln.closed_at.strftime('%Y-%m-%d %H:%M') }}</dd>{% endif %}
+            </dl>
+        </div>
+
+        <div class="dv-panel">
+            <h3>详情</h3>
+            <div class="dv-desc">{{ (description_html or '暂无描述')|safe }}</div>
+
+            {% if vuln.verification_result %}
+            <div style="margin-top:14px;padding:10px 14px;border-radius:8px;{% if vuln.verification_result == 'pass' %}background:var(--success-tint);color:var(--success-ink);{% else %}background:#fee2e2;color:var(--danger-ink);{% endif %}">
+                <strong>复测结果：</strong>{% if vuln.verification_result == 'pass' %}✅ 通过{% else %}❌ 不通过{% endif %}
+                {% if vuln.verification_comment %} - {{ vuln.verification_comment }}{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# 流转与复测历史。状态机每次流转都会往 verification_history 追加一条,
+       但改造前全站没有任何模板渲染它 —— 数据一直在写,却没人能看见。 #}
+    {% set history = (vuln.verification_history | from_json) if vuln.verification_history else [] %}
+    {% if history %}
+    <div class="dv-panel" style="margin-top:18px;">
+        <h3>流转与复测历史（{{ history | length }} 次）</h3>
+        <ul class="ui-timeline">
+            {% for item in history | reverse %}
+            <li class="is-{{ item.result }}">
+                <div class="tl-head">
+                    <span class="ui-badge {{ verification_action_class(item.result) }}">{{ verification_action_label(item.result) }}</span>
+                    <span class="tl-time">{{ (item.time or '')[:19].replace('T', ' ') }}</span>
+                    {% if item.operator %}<span class="tl-operator">操作人：{{ item.operator }}</span>{% endif %}
+                </div>
+                {% if item.comment %}<div class="tl-comment">{{ item.comment }}</div>{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% elif vuln.status != 'pending' %}
+    <div class="dv-panel" style="margin-top:18px;">
+        <h3>流转与复测历史</h3>
+        <div class="ui-hint" style="margin:0;">这条漏洞是早期数据，当时还没有记录流转历史的机制。</div>
+    </div>
+    {% endif %}
+
+    <div class="dv-actions">
+        {# 状态流转按钮:由 available_actions() 生成 —— 和 vulnerabilities.transition()
+           的服务端校验读的是同一张转换表,不会出现"按钮能点、点了报错"或反过来的情况。 #}
+        {% if not vuln.is_deleted %}
+        {% for action, label in available_actions(vuln, current_user) %}
+        <form method="POST" action="{{ url_for('vulnerabilities.transition', id=vuln.id, action=action) }}"
+              class="d-inline-flex align-items-center gap-1"
+              {% if action == 'reopen' %}onsubmit="return confirm('确认重新打开该漏洞？')"{% endif %}>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="back_url" value="{{ request.full_path.rstrip('?') }}">
+            {% if action != 'fix' %}
+            <input type="text" name="verification_comment" class="form-control form-control-sm"
+                   style="width:200px" placeholder="说明（选填）">
+            {% endif %}
+            <button type="submit" class="ui-btn-secondary ui-btn--sm {{ 'ui-btn--success' if action == 'verify_pass' else 'ui-btn--warning' if action == 'verify_fail' else 'ui-btn--soft' if action == 'fix' else '' }}">{{ label }}</button>
+        </form>
+        {% endfor %}
+        {% endif %}
+
+        {% if not vuln.is_deleted and has_perm(current_user, PERM.VULN_EDIT) %}
+        <a href="{{ url_for('vulnerabilities.edit', id=vuln.id) }}" class="ui-btn-secondary">✏️ 编辑漏洞详情</a>
+        {% endif %}
+
+        {% if not vuln.is_deleted and has_perm(current_user, PERM.VULN_DELETE) %}
+        <form method="POST" action="{{ url_for('vulnerabilities.delete', id=vuln.id) }}" class="d-inline" onsubmit="return confirm('确认删除该漏洞？删除后将进入回收站。')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="ui-btn--danger">🗑️ 删除</button>
+        </form>
+        {% endif %}
+
+        {% if vuln.is_deleted and has_perm(current_user, PERM.VULN_DELETE) %}
+        <form method="POST" action="{{ url_for('vulnerabilities.restore', id=vuln.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="ui-btn--success">↩️ 恢复</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

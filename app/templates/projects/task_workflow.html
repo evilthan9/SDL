@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}工作流{% endblock %}
+
+{% block content %}
+<style>
+    .workflow-page { background: var(--bg-soft); color: var(--text-main); }
+    .workflow-title { padding: 14px 18px; background: #fff; border-bottom: 1px solid #e6e9ee; font-size: 18px; font-weight: 700; }
+    .workflow-top { background: #fff; padding: 24px 18px 30px; border-bottom: 10px solid #f4f5f7; }
+    .workflow-back { display: inline-block; margin-bottom: 20px; color: var(--primary); text-decoration: none; font-size: 14px; }
+    .workflow-track { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; position: relative; }
+    .workflow-track::before { content: ""; position: absolute; top: 14px; left: 10%; right: 10%; height: 2px; background: #cdd5df; }
+    .workflow-step { position: relative; z-index: 1; text-align: center; color: #b3bac4; font-size: 14px; }
+    .workflow-dot { width: 28px; height: 28px; margin: 0 auto 8px; border: 2px solid #cdd5df; border-radius: 50%; background: #fff; line-height: 24px; color: #9ba5b1; }
+    .workflow-step.active { color: #2580d9; font-weight: 600; }
+    .workflow-step.active .workflow-dot { border-color: #2580d9; color: #2580d9; }
+    .workflow-step.done { color: var(--success-ink); }
+    .workflow-step.done .workflow-dot { border-color: var(--success-ink); background: var(--success-ink); color: #fff; }
+    .workflow-panel { margin: 18px; background: #fff; border: 1px solid var(--panel-border); border-radius: 4px; }
+    .workflow-panel-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #e5e8ed; color: var(--primary); font-weight: 600; }
+    .workflow-actions { display: flex; align-items: center; gap: 10px; }
+    .workflow-button { height: 34px; padding: 0 16px; border: 0; border-radius: 3px; background: var(--primary); color: #fff; cursor: pointer; }
+    .workflow-start { background: var(--success-ink); }
+    .workflow-review { background: #e58a19; }
+    .start-modal { display: none; position: fixed; inset: 0; z-index: 21; align-items: center; justify-content: center; }
+    .start-modal.open { display: flex; }
+    .start-modal-mask { position: absolute; inset: 0; background: rgba(18, 30, 48, 0.32); }
+    .start-modal-card { position: relative; width: min(420px, calc(100vw - 32px)); background: #fff; border-radius: 4px; box-shadow: 0 16px 42px rgba(20, 38, 62, 0.22); }
+    .start-modal-header { padding: 16px 20px; border-bottom: 1px solid var(--panel-border); color: var(--text-main); font-weight: 600; }
+    .start-modal-body { padding: 24px 20px; color: var(--text-body); font-size: 15px; }
+    .start-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid #e7ebf0; }
+    .assign-modal { display: none; position: fixed; inset: 0; z-index: 20; }
+    .assign-modal.open { display: flex; align-items: center; justify-content: center; }
+    .assign-modal-mask { position: absolute; inset: 0; background: rgba(18, 30, 48, 0.32); }
+    .assign-modal-card { position: relative; width: min(820px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; background: #fff; border-radius: 4px; box-shadow: 0 16px 42px rgba(20, 38, 62, 0.22); }
+    .assign-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--panel-border); color: var(--text-main); font-size: 16px; font-weight: 600; }
+    .assign-close { border: 0; background: transparent; color: #6d7886; font-size: 24px; line-height: 1; cursor: pointer; }
+    .assign-modal-section { padding: 20px 24px; border-bottom: 1px solid #e7ebf0; }
+    .assign-section-title { margin-bottom: 18px; color: var(--text-main); font-size: 14px; font-weight: 600; }
+    .assign-time-row { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: center; gap: 20px; }
+    .assign-time-row label { color: var(--text-body); font-size: 14px; }
+    .assign-time-fields, .assign-person-fields { display: flex; align-items: center; gap: 10px; }
+    .assign-time-fields input, .assign-person-fields select { height: 38px; min-width: 0; flex: 1; padding: 0 10px; border: 1px solid #cfd7e2; border-radius: 3px; color: var(--text-body); background: #fff; }
+    .assign-person-fields { flex-wrap: wrap; }
+    .assign-person-fields select { flex: 0 1 220px; }
+    .assign-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; }
+    .assign-cancel { height: 34px; padding: 0 18px; border: 1px solid #cfd7e2; border-radius: 3px; background: #fff; color: var(--text-body); cursor: pointer; }
+    .workflow-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; padding: 20px 18px; }
+    .workflow-field label { display: block; margin-bottom: 8px; color: var(--text-faint); font-size: 13px; }
+    .workflow-field strong { color: #293b52; font-size: 14px; font-weight: 500; }
+    .workflow-content { display: grid; grid-template-columns: 170px minmax(0, 700px); min-height: 480px; }
+    .workflow-sidebar { border-right: 1px solid #e5e8ed; padding: 18px 0; }
+    .workflow-sidebar-item { padding: 12px 20px; color: #45566d; font-size: 14px; }
+    .workflow-sidebar-item.active { color: var(--primary); background: #eef6ff; border-left: 3px solid var(--primary); }
+    .workflow-cases { padding: 18px 24px; }
+    .workflow-cases-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; color: var(--text-body); font-size: 14px; }
+    .case-filter { height: 32px; min-width: 110px; border: 1px solid var(--border-input); border-radius: 3px; padding: 0 8px; color: var(--text-body); background: #fff; }
+    .case-item { padding: 14px 0; border-bottom: 1px dashed var(--border-input); }
+    .case-title { color: #1474c9; font-size: 14px; font-weight: 600; }
+    .case-meta { margin-top: 10px; color: #68778a; font-size: 12px; }
+    .case-status-form { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .case-status-select { height: 32px; min-width: 110px; border: 1px solid var(--border-input); border-radius: 3px; padding: 0 8px; color: var(--text-body); background: #fff; }
+    .case-save { height: 32px; padding: 0 12px; border: 0; border-radius: 3px; background: var(--primary); color: #fff; cursor: pointer; }
+    .case-vulnerability { color: var(--danger-ink); font-size: 12px; }
+    .case-vulns { margin: 10px 0 2px; padding: 10px 12px; background: #fbfcfe; border: 1px solid var(--panel-border); border-radius: 6px; }
+    .case-vulns-title { font-size: 12px; color: var(--text-faint); margin-bottom: 6px; }
+    .case-vuln { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--panel-border); font-size: 13px; }
+    .case-vuln:last-child { border-bottom: 0; padding-bottom: 0; }
+    .case-vuln code { color: var(--danger-ink); font-size: 12px; }
+    .case-vuln .cv-title { color: var(--text-main); font-weight: 600; }
+    .case-vuln .cv-status { color: #68778a; }
+    .case-vuln .cv-link { color: var(--primary); text-decoration: none; font-weight: 600; }
+
+    /* ---- 用例的增删改（此前完全没有入口）---- */
+    .case-toolbar { display: inline-flex; margin: 0 0 0 auto; }
+    .case-new-form { display: none; gap: 8px; padding: 12px; margin-bottom: 10px; border: 1px dashed #cfd8e6; border-radius: 8px; background: #fafbfd; }
+    .case-new-form.open { display: flex; flex-wrap: wrap; }
+    .case-new-input { flex: 1; min-width: 160px; height: 32px; padding: 0 10px; border: 1px solid var(--border-input); border-radius: 3px; font-size: 13px; color: var(--text-body); }
+    .case-new-version { flex: 0 0 90px; min-width: 90px; }
+    .case-edit { margin-top: 8px; }
+    .case-edit > summary { cursor: pointer; color: var(--primary); font-size: 12px; font-weight: 600; }
+    .case-edit-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+    .case-delete-button { color: var(--danger-ink); border-color: #f0c8c6; }
+    .case-delete-button:disabled { color: #b9c0ca; border-color: #e2e6ec; cursor: not-allowed; }
+    .case-empty { padding: 40px 16px; text-align: center; color: var(--text-faint); font-size: 13px; }
+    .case-pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 4px; color: var(--text-faint); font-size: 13px; flex-wrap: wrap; }
+    .case-pager-links { display: inline-flex; gap: 8px; align-items: center; }
+    .case-pager-links a, .case-pager-links .disabled { padding: 4px 12px; border: 1px solid var(--border-input); border-radius: 3px; color: var(--text-body); text-decoration: none; }
+    .case-pager-links .disabled { color: var(--text-faint); background: var(--bg-stripe); }
+
+    @media (max-width: 760px) { .workflow-info { grid-template-columns: 1fr 1fr; } .workflow-content { grid-template-columns: 120px minmax(0, 1fr); } .workflow-panel-header { align-items: flex-start; flex-direction: column; gap: 12px; } }
+</style>
+
+<div class="workflow-page ui-page--fullbleed">
+    <div class="workflow-title">工作流</div>
+    <div class="workflow-top">
+        <a class="workflow-back" href="{{ url_for('projects.list') }}">← 返回</a>
+        <div class="workflow-track">
+            {% for stage_key, stage_name in workflow_stages %}
+            {% set active = stage_key == current_stage %}
+            {% set completed = loop.index0 < current_stage_index %}
+            <div class="workflow-step {% if active %}active{% elif completed %}done{% endif %}">
+                <div class="workflow-dot">{% if completed %}✓{% else %}{{ loop.index }}{% endif %}</div>
+                <div>{{ stage_name }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="workflow-panel">
+        <div class="workflow-panel-header">
+            <span>任务信息</span>
+            {% if current_user.role == 'admin' or (task.tester_id == current_user.id and task.status in ['assigned', 'in_progress', 'retest']) %}
+            <div class="workflow-actions">
+                {% if task.status == 'assigned' %}<button class="workflow-button workflow-start" type="button" onclick="document.getElementById('startModal').classList.add('open')">开始测试</button>{% endif %}
+                {% if task.status == 'in_progress' %}<button class="workflow-button workflow-review" type="button" onclick="document.getElementById('reviewModal').classList.add('open')">审核完成</button>{% endif %}
+                {% if task.status == 'retest' %}<form method="post" action="{{ url_for('projects.complete_retest', id=task.id) }}" style="display:inline-block" onsubmit="return confirm('确认整改与复测已通过，审核完成并归档该任务？')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="workflow-button workflow-start" type="submit">审核完成</button></form>{% endif %}
+                {% if current_user.role == 'admin' %}
+                <button class="workflow-button" type="button" onclick="document.getElementById('assignModal').classList.add('open')">任务分配</button>
+                {% endif %}<span class="ui-hint" style="margin:0;">测试人员：{{ task.tester.username if task.tester else '待分配' }}</span>
+            </div>
+            {% elif task.tester %}
+            <span>测试人员：{{ task.tester.username }}</span>
+            {% endif %}
+        </div>
+        <div class="workflow-info">
+            <div class="workflow-field"><label>任务名称</label><strong>{{ task.name }}</strong></div>
+            <div class="workflow-field"><label>测试类型</label><strong>{{ test_type_label(task.test_type) }}</strong></div>
+            <div class="workflow-field"><label>关联产品/车型</label><strong>{{ task.project.name if task.project else '-' }}</strong></div>
+            <div class="workflow-field"><label>团队</label><strong>{{ task.project.department if task.project else '-' }}</strong></div>
+            <div class="workflow-field"><label>创建时间</label><strong>{{ task.created_at.strftime('%Y-%m-%d %H:%M:%S') if task.created_at else '-' }}</strong></div>
+            <div class="workflow-field"><label>任务状态</label><strong>{{ task_status_label(task.status) }}</strong></div>
+        </div>
+    </div>
+
+    <div class="workflow-panel">
+        <div class="workflow-content">
+            <div class="workflow-sidebar">
+                <div class="workflow-sidebar-item active">测试用例</div>
+                <div class="workflow-sidebar-item">测试结果</div>
+                <div class="workflow-sidebar-item">任务记录</div>
+            </div>
+            <div class="workflow-cases">
+                <div class="workflow-cases-head">
+                    <span>测试用例（{{ test_case_total }}）</span>
+                    <form method="get" class="case-toolbar">
+                        <select class="case-filter" name="case_status" onchange="this.form.submit()">
+                            <option value="">全部状态</option>
+                            <option value="disabled" {% if case_status == 'disabled' %}selected{% endif %}>未启用</option>
+                            <option value="pass" {% if case_status == 'pass' %}selected{% endif %}>通过</option>
+                            <option value="fail" {% if case_status == 'fail' %}selected{% endif %}>不通过</option>
+                        </select>
+                    </form>
+                    {% if can_edit_cases %}
+                    <button class="case-save" type="button" onclick="document.getElementById('newCaseForm').classList.toggle('open')">＋ 新增用例</button>
+                    {% endif %}
+                </div>
+
+                {% if can_edit_cases %}
+                {# 原先没有任何入口能新增用例 —— 任务首次进入工作流时播种的 156 条是只读的 #}
+                <form id="newCaseForm" class="case-new-form" method="post"
+                      action="{{ url_for('projects.create_case', task_id=task.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input class="case-new-input" type="text" name="name" placeholder="用例名称（必填）" required maxlength="200">
+                    <input class="case-new-input case-new-version" type="text" name="version" placeholder="版本" value="1.0" maxlength="20">
+                    <input class="case-new-input" type="text" name="detail" placeholder="说明（选填）" maxlength="200">
+                    <button class="case-save" type="submit">保存</button>
+                </form>
+                {% endif %}
+
+                {% for test_case in test_cases %}
+                {% set vuln_count = case_counts.get(test_case.id, 0) %}
+                {% set linked = case_vulns.get(test_case.id, []) %}
+                <div class="case-item">
+                    <div class="case-title">No.{{ test_case.case_number }} {{ test_case.name }}</div>
+                    <div class="case-meta">版本：{{ test_case.version }}　漏洞：{{ vuln_count }}{% if test_case.detail %}　说明：{{ test_case.detail }}{% endif %}</div>
+
+                    <form class="case-status-form" method="post" action="{{ url_for('projects.update_case_status', task_id=task.id, case_id=test_case.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {% if case_status %}<input type="hidden" name="case_status" value="{{ case_status }}">{% endif %}
+                        <select class="case-status-select" name="status"{% if not can_edit_cases %} disabled{% endif %}>
+                            <option value="disabled" {% if test_case.status == 'disabled' %}selected{% endif %}>未启用</option>
+                            <option value="pass" {% if test_case.status == 'pass' %}selected{% endif %}>通过</option>
+                            <option value="fail" {% if test_case.status == 'fail' %}selected{% endif %}>不通过</option>
+                        </select>
+                        {% if can_edit_cases %}<button class="case-save" type="submit">保存状态</button>{% endif %}
+                        {% if test_case.status == 'fail' %}
+                        <a class="workflow-button" href="{{ url_for('vulnerabilities.publish_from_case', task_id=task.id, case_id=test_case.id) }}">新增漏洞</a>
+                        {% endif %}
+                    </form>
+
+                    {% if can_edit_cases %}
+                    <details class="case-edit">
+                        <summary>编辑 / 删除</summary>
+                        <form class="case-edit-form" method="post"
+                              action="{{ url_for('projects.edit_case', task_id=task.id, case_id=test_case.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input class="case-new-input" type="text" name="name" value="{{ test_case.name }}" required maxlength="200">
+                            <input class="case-new-input case-new-version" type="text" name="version" value="{{ test_case.version or '1.0' }}" maxlength="20">
+                            <input class="case-new-input" type="text" name="detail" value="{{ test_case.detail or '' }}" placeholder="说明" maxlength="200">
+                            <button class="case-save" type="submit">保存修改</button>
+                        </form>
+                        <form method="post"
+                              action="{{ url_for('projects.delete_case', task_id=task.id, case_id=test_case.id) }}"
+                              onsubmit="return confirm('确认删除用例 No.{{ test_case.case_number }}「{{ test_case.name }}」？')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="workflow-button case-delete-button" type="submit"{% if vuln_count %} disabled title="该用例已关联 {{ vuln_count }} 条漏洞，需先处理"{% endif %}>
+                                删除用例{% if vuln_count %}（已关联 {{ vuln_count }} 条漏洞）{% endif %}
+                            </button>
+                        </form>
+                    </details>
+                    {% endif %}
+
+                    {% if linked %}
+                    <div class="case-vulns">
+                        <div class="case-vulns-title">已关联漏洞</div>
+                        {% for vuln in linked %}
+                        <div class="case-vuln">
+                            <span class="cv-title">{{ vuln.title }}</span>
+                            <span class="ui-badge {{ severity_class(vuln.severity) }}">{{ severity_label(vuln.severity) }}</span>
+                            <span class="ui-badge {{ STATUS_BADGE_CLASSES.get(vuln.status) }}">{{ status_label(vuln.status) }}</span>
+                            <span class="cv-status">{{ vuln.assignee.username if vuln.assignee else '待分配' }}</span>
+                            <a class="cv-link" href="{{ url_for('vulnerabilities.detail', id=vuln.id) }}">查看</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="case-empty">没有符合条件的测试用例</div>
+                {% endfor %}
+
+                {% if pagination.pages > 1 %}
+                {% set page_ctx = {'case_status': case_status} if case_status else {} %}
+                <div class="case-pager">
+                    <span>第 {{ pagination.page }} / {{ pagination.pages }} 页，共 {{ pagination.total }} 条</span>
+                    <span class="case-pager-links">
+                        {% if pagination.has_prev %}
+                        <a href="{{ url_for('projects.task_workflow', id=task.id, page=pagination.prev_num, **page_ctx) }}">上一页</a>
+                        {% else %}<span class="disabled">上一页</span>{% endif %}
+                        {% if pagination.has_next %}
+                        <a href="{{ url_for('projects.task_workflow', id=task.id, page=pagination.next_num, **page_ctx) }}">下一页</a>
+                        {% else %}<span class="disabled">下一页</span>{% endif %}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if current_user.role == 'admin' %}
+    <div id="assignModal" class="assign-modal" role="dialog" aria-modal="true" aria-labelledby="assignModalTitle">
+        <div class="assign-modal-mask" onclick="document.getElementById('assignModal').classList.remove('open')"></div>
+        <div class="assign-modal-card">
+            <div class="assign-modal-header">
+                <span id="assignModalTitle">任务分配</span>
+                <button type="button" class="assign-close" onclick="document.getElementById('assignModal').classList.remove('open')">×</button>
+            </div>
+            <form method="post" action="{{ url_for('projects.assign_task', id=task.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="assign-modal-section">
+                    <div class="assign-section-title">任务总体时间分配</div>
+                    <div class="assign-time-row">
+                        <label>时间范围</label>
+                        <div class="assign-time-fields">
+                            <input type="datetime-local" name="start_date" required value="{{ task.start_date.strftime('%Y-%m-%dT%H:%M') if task.start_date else '' }}">
+                            <span>至</span>
+                            <input type="datetime-local" name="end_date" required value="{{ task.end_date.strftime('%Y-%m-%dT%H:%M') if task.end_date else '' }}">
+                        </div>
+                    </div>
+                </div>
+                <div class="assign-modal-section">
+                    <div class="assign-section-title">测试对象人员时间分配</div>
+                    <div class="assign-time-row">
+                        <label>{{ task.project.name if task.project else '测试任务' }}</label>
+                        <div class="assign-person-fields">
+                            <select name="tester_id" required>
+                                <option value="">请选择测试人员</option>
+                                {% for tester in testers %}<option value="{{ tester.id }}" {% if task.tester_id == tester.id %}selected{% endif %}>{{ tester.username }}</option>{% endfor %}
+                            </select>
+                            <span>使用任务总体时间</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="assign-modal-footer">
+                    <button type="button" class="assign-cancel" onclick="document.getElementById('assignModal').classList.remove('open')">取消</button>
+                    <button type="submit" class="workflow-button">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if task.status == 'assigned' and (current_user.role == 'admin' or task.tester_id == current_user.id) %}
+    <div id="startModal" class="start-modal" role="dialog" aria-modal="true" aria-labelledby="startModalTitle">
+        <div class="start-modal-mask" onclick="document.getElementById('startModal').classList.remove('open')"></div>
+        <div class="start-modal-card">
+            <div class="start-modal-header" id="startModalTitle">开始测试</div>
+            <div class="start-modal-body">确定要开始执行该测试任务吗？</div>
+            <div class="start-modal-footer">
+                <button type="button" class="assign-cancel" onclick="document.getElementById('startModal').classList.remove('open')">否</button>
+                <form method="post" action="{{ url_for('projects.start_task', id=task.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="start" value="yes"><button class="workflow-button workflow-start" type="submit">是</button></form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if task.status == 'in_progress' and (current_user.role == 'admin' or task.tester_id == current_user.id) %}
+    <div id="reviewModal" class="start-modal" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
+        <div class="start-modal-mask" onclick="document.getElementById('reviewModal').classList.remove('open')"></div>
+        <div class="start-modal-card">
+            <div class="start-modal-header" id="reviewModalTitle">审核完成</div>
+            <div class="start-modal-body">请选择本次测试结果</div>
+            <div class="start-modal-footer">
+                <button type="button" class="assign-cancel" onclick="document.getElementById('reviewModal').classList.remove('open')">取消</button>
+                <form method="post" action="{{ url_for('projects.review_task', id=task.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="result" value="fail"><button class="assign-cancel" type="submit">测试不通过</button></form>
+                <form method="post" action="{{ url_for('projects.review_task', id=task.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="result" value="pass"><button class="workflow-button workflow-start" type="submit">测试通过</button></form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

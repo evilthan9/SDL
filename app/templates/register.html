@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}注册{% endblock %}
+
+{% block content %}
+<div class="ui-form-page ui-form-page--narrow" style="margin-top:4vh;">
+    <div class="filter-card">
+        <h3 class="ui-section-title">用户注册</h3>
+
+        <form method="POST" novalidate>
+            {{ form.hidden_tag() }}
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.username.label.text }}</label>
+                {{ form.username(class="form-control", autocomplete="username") }}
+                <div class="ui-hint">2 ~ 20 个字符。</div>
+                {% for error in form.username.errors %}
+                <div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.email.label.text }}</label>
+                {{ form.email(class="form-control", autocomplete="email") }}
+                {% for error in form.email.errors %}
+                <div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.password.label.text }}</label>
+                {{ form.password(class="form-control", autocomplete="new-password") }}
+                <div class="ui-hint">至少 6 位。</div>
+                {% for error in form.password.errors %}
+                <div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="form-field">
+                <label class="ui-required">{{ form.confirm_password.label.text }}</label>
+                {{ form.confirm_password(class="form-control", autocomplete="new-password") }}
+                {% for error in form.confirm_password.errors %}
+                <div class="ui-hint" style="color:var(--danger-ink);">{{ error }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="ui-hint" style="margin-top:14px;">
+                新账号一律以 <strong>访客</strong> 身份创建，测试/业务等角色由管理员在「用户权限」里分配。
+            </div>
+
+            <div class="ui-form-actions">
+                {{ form.submit(class="ui-btn-primary") }}
+            </div>
+        </form>
+
+        <div class="ui-hint" style="text-align:center;margin-top:14px;">
+            已有账号？<a href="{{ url_for('auth.login') }}" style="color:var(--primary);">去登录</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

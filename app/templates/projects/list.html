@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}任务列表{% endblock %}
+
+{% block content %}
+<style>
+    /* 仅保留本页特有的列宽控制,其余样式走 app.css 的公共组件 */
+    .task-table { min-width: 1080px; }
+    .task-table th:nth-child(2), .task-table td:nth-child(2) { width: 220px; }
+    .task-table th:nth-child(3), .task-table td:nth-child(3) { width: 110px; }
+    .task-table th:nth-child(4), .task-table td:nth-child(4) { width: 130px; }
+    .task-actions { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+    .task-actions form { display: inline; margin: 0; }
+</style>
+
+<div class="page-header">
+    <h1 class="page-title">任务列表</h1>
+    <div class="ui-hint">测试端任务视图。按筛选条件展示，可导出当前筛选结果。</div>
+</div>
+
+<form class="filter-card" method="get" action="{{ url_for('projects.list') }}">
+    <div class="filter-grid">
+        <div class="form-field">
+            <label>任务名称</label>
+            <input type="text" name="name" value="{{ filters.name }}" placeholder="关键字">
+        </div>
+        <div class="form-field">
+            <label>任务状态</label>
+            {# 原映射只有 3 个值，Task.status 的另 2 个（待测试 / 整改与复测）永远筛不到 #}
+            <select name="task_status">
+                <option value="">全部</option>
+                {% for value, label in TASK_STATUS_LABELS.items() %}
+                <option value="{{ value }}" {% if filters.task_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-field">
+            <label>测试类型</label>
+            {# 原先是拿"Web应用/移动应用/API接口"去比 Task.test_type（实际值是
+               penetration_test / compliance_test / ...），两边对不上，从来筛不出数据 #}
+            <select name="test_type">
+                <option value="">全部</option>
+                {% for value, label in TEST_TYPE_LABELS.items() %}
+                <option value="{{ value }}" {% if filters.test_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-field">
+            <label>所属部门</label>
+            <input type="text" name="department" value="{{ filters.department }}" placeholder="部门关键字">
+        </div>
+        <div class="form-field">
+            <label>处理人</label>
+            <input type="text" name="owner_name" value="{{ filters.owner_name }}" placeholder="测试人员用户名">
+        </div>
+        <div class="form-field">
+            <label>创建时间从</label>
+            <input type="date" name="created_from" value="{{ filters.created_from }}">
+        </div>
+        <div class="form-field">
+            <label>至</label>
+            <input type="date" name="created_to" value="{{ filters.created_to }}">
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <div class="toolbar-actions">
+            {% if has_perm(current_user, PERM.PROJECT_CREATE) %}
+            <a href="{{ url_for('projects.create') }}" class="ui-btn-primary">新增项目</a>
+            {% endif %}
+            {# 「退出」原本也挤在这个筛选工具栏里,已移到顶栏右上角的用户区 #}
+        </div>
+        <div class="toolbar-actions">
+            <a href="{{ url_for('projects.list') }}" class="ui-btn-secondary">重置</a>
+            <button type="submit" name="export" value="1" class="ui-btn-soft">导出 CSV</button>
+            <button type="submit" class="ui-btn-primary">查询</button>
+        </div>
+    </div>
+</form>
+
+<div class="table-card" style="margin-top:18px;">
+    <div style="overflow-x:auto;">
+        <table class="data-table task-table">
+            <thead>
+                <tr>
+                    <th style="width:60px;">ID</th>
+                    <th>任务名称</th>
+                    <th>测试类型</th>
+                    <th>所属部门</th>
+                    <th style="width:110px;">创建人</th>
+                    <th style="width:120px;">状态</th>
+                    <th style="width:120px;">创建时间</th>
+                    <th style="width:110px;">计划开始</th>
+                    <th style="width:110px;">计划结束</th>
+                    <th style="width:90px;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for task in projects %}
+                <tr>
+                    <td>{{ task.id }}</td>
+                    <td class="task-name">{{ task.name }}</td>
+                    {# 原先直接渲染 {{ task.test_type }}，界面上出现 penetration_test 这种枚举值 #}
+                    <td><span class="tag-badge">{{ test_type_label(task.test_type) }}</span></td>
+                    <td>{{ task.project.department if task.project and task.project.department else '—' }}</td>
+                    <td>{{ task.creator.username if task.creator else (task.project.owner.username if task.project and task.project.owner else '—') }}</td>
+                    <td><span class="status-badge {{ task_status_class(task.status) }}">{{ task_status_label(task.status) }}</span></td>
+                    <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else '—' }}</td>
+                    <td>{{ task.start_date.strftime('%Y-%m-%d') if task.start_date else '—' }}</td>
+                    <td>{{ task.end_date.strftime('%Y-%m-%d') if task.end_date else '—' }}</td>
+                    <td>
+                        <span class="task-actions">
+                        <a href="{{ url_for('projects.task_workflow', id=task.id) }}" class="table-link">工作流</a>
+                        {% if has_perm(current_user, PERM.TASK_DELETE) %}
+                        <form method="post" action="{{ url_for('projects.delete_task', id=task.id) }}"
+                              onsubmit="return confirm('确定删除该任务吗？关联的测试用例与漏洞记录也会一并处理。');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="table-link"
+                                    style="border:0;background:transparent;color:var(--danger);cursor:pointer;padding:0;">删除</button>
+                        </form>
+                        {% endif %}
+                        </span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="10" class="ui-hint" style="text-align:center;padding:42px;margin:0;">没有符合条件的任务</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if pagination.pages > 1 %}
+    {% set kept = {} %}
+    {% for key, value in filters.items() %}{% if value %}{% set _ = kept.update({key: value}) %}{% endif %}{% endfor %}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-top:1px solid var(--panel-border);flex-wrap:wrap;">
+        <span class="ui-hint" style="margin:0;">共 {{ pagination.total }} 条，第 {{ pagination.page }} / {{ pagination.pages }} 页</span>
+        <span style="display:inline-flex;gap:8px;">
+            {% if pagination.has_prev %}
+            <a class="ui-btn-secondary ui-btn--sm" href="{{ url_for('projects.list', page=pagination.prev_num, **kept) }}">上一页</a>
+            {% else %}<span class="ui-btn-secondary ui-btn--sm" style="opacity:.45;">上一页</span>{% endif %}
+            {% if pagination.has_next %}
+            <a class="ui-btn-secondary ui-btn--sm" href="{{ url_for('projects.list', page=pagination.next_num, **kept) }}">下一页</a>
+            {% else %}<span class="ui-btn-secondary ui-btn--sm" style="opacity:.45;">下一页</span>{% endif %}
+        </span>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
